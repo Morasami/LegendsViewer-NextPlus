@@ -34,6 +34,29 @@ public class BookmarkServiceTests : IDisposable
 
     private IBookmarkService CreateService() => new BookmarkService(BookmarkFilePath);
 
+    [DataTestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public void DeleteTemplatePathTargetsCorrectWorldWithSharedTimestamp(bool fileExists)
+    {
+        const string timestamp = "00001-01-01";
+        var service = CreateService();
+        foreach (var region in new[] { "first", "second" })
+        {
+            var template = Path.Combine(_testFolder, region + "-{TIMESTAMP}-legends.xml");
+            var bookmark = CreateTestBookmark(template, region, timestamp);
+            service.AddBookmark(bookmark);
+        }
+        var target = Path.Combine(_testFolder, "second-" + timestamp + "-legends.xml");
+        if (fileExists) File.WriteAllText(target, "<df_world/>");
+        var result = service.DeleteBookmarkTimestamp(target);
+        Assert.IsTrue(result.Success);
+        Assert.AreEqual(!fileExists, result.FileMissing);
+        Assert.AreEqual("first", service.GetAll().Single().WorldName);
+        Assert.AreEqual("first", CreateService().GetAll().Single().WorldName);
+        if (fileExists) Assert.IsTrue(File.Exists(target), "Deleting a bookmark must not delete an export.");
+    }
+
     [TestMethod]
     public void AddBookmark_SingleBookmark_ShouldPersist()
     {
