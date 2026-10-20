@@ -182,29 +182,19 @@ public class BookmarkService : IBookmarkService
                 return new DeleteResult { Success = false };
             }
 
-            // Try to find bookmark via filePath mapping first
-            if (_filePathToId.TryGetValue(normalizedPath, out var mappedId))
-            {
+            // Prefer the world-specific template, even when the export has disappeared.
+            string templatePath = ReplaceLastOccurrence(filePath, timestamp, TimestampPlaceholder);
+            if (_filePathToId.TryGetValue(Path.GetFullPath(templatePath), out var templateId))
+                id = templateId;
+            else if (_filePathToId.TryGetValue(normalizedPath, out var mappedId))
                 id = mappedId;
-            }
-            else if (!fileMissing)
-            {
-                // File exists but not in mapping - shouldn't happen normally
-                return new DeleteResult { Success = false };
-            }
 
-            // If file is missing, find bookmark by searching for the timestamp
-            if (fileMissing || id == null)
+            // Preserve the legacy missing-file lookup for bookmarks without a template.
+            if (id == null)
             {
-                var bookmark = _bookmarks.Values.FirstOrDefault(b => b.WorldTimestamps.Contains(timestamp));
-                if (bookmark != null)
-                {
-                    id = bookmark.Id;
-                }
-                else
-                {
+                id = _bookmarks.Values.FirstOrDefault(b => b.WorldTimestamps.Contains(timestamp))?.Id;
+                if (id == null)
                     return new DeleteResult { Success = false, FileMissing = fileMissing };
-                }
             }
 
             if (!_bookmarks.TryGetValue(id!, out var bookmarkToUpdate))

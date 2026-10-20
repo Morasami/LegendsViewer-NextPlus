@@ -4,8 +4,10 @@ using LegendsViewer.Backend.Legends.Enums;
 using LegendsViewer.Backend.Legends.Extensions;
 using LegendsViewer.Backend.Legends.Interfaces;
 using SkiaSharp;
+using System.Globalization;
+using System.Text.RegularExpressions;
 
-public class WorldMapImageGenerator(IWorld worldDataService) : IWorldMapImageGenerator
+public class WorldMapImageGenerator(IWorld worldDataService, Func<string, string?>? findDfFile = null) : IWorldMapImageGenerator
 {
     public const int DefaultTileSizeMin = 2;
     public const int DefaultTileSizeMid = 4;
@@ -19,19 +21,58 @@ public class WorldMapImageGenerator(IWorld worldDataService) : IWorldMapImageGen
 
     private SKBitmap? _exportedWorldMapBitmap;
 
-    public async Task LoadExportedWorldMapAsync(string? bmpFilePath)
+    public async Task LoadExportedWorldMapAsync(string? legendsFilePath)
     {
-        if (string.IsNullOrEmpty(bmpFilePath) || !File.Exists(bmpFilePath))
+        Clear();
+        if (string.IsNullOrEmpty(legendsFilePath) || !File.Exists(legendsFilePath)) return;
+
+        var directory = Path.GetDirectoryName(Path.GetFullPath(legendsFilePath))!;
+        var name = Path.GetFileName(legendsFilePath);
+        var suffix = name.EndsWith("-legends_plus.xml", StringComparison.OrdinalIgnoreCase)
+            ? "-legends_plus.xml" : "-legends.xml";
+        string? bmpPath = legendsFilePath.EndsWith(".bmp", StringComparison.OrdinalIgnoreCase)
+            ? legendsFilePath : null;
+        if (name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
         {
-            return;
+            var prefix = Path.Combine(directory, name[..^suffix.Length]);
+            bmpPath = prefix + "-world_map.bmp";
+            var companion = prefix + "-world_map.csv";
+            var resolve = findDfFile ?? (path => FindDfFile(path));
+            try
+            {
+                var graphics = resolve("data/vanilla/vanilla_world_map/graphics/graphics_world_map.txt");
+                string?[] sprites = new[] { "tiles", "forests", "mountains", "details" }
+                    .Select(part => resolve($"data/vanilla/vanilla_world_map/graphics/images/world_map_{part}.png"))
+                    .ToArray();
+                if (File.Exists(companion) && new FileInfo(companion).Length <= 10_000_000
+                    && graphics != null && sprites.All(path => path != null))
+                {
+                    _exportedWorldMapBitmap = await Task.Run(() => LoadPremiumMap(companion, graphics,
+                        sprites.Select(path => path!).ToArray()));
+                    return;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                or InvalidDataException or ArgumentException or KeyNotFoundException or OverflowException)
+            {
+                _worldDataService.Log.AppendLine($"Premium map unavailable; using fallback: {ex.Message}");
+            }
         }
 
-        using (var fileStream = new FileStream(bmpFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true))
-        using (var memoryStream = new MemoryStream())
+        if (bmpPath != null && File.Exists(bmpPath))
         {
-            await fileStream.CopyToAsync(memoryStream);
-            memoryStream.Position = 0; // Reset the position of the memory stream to the beginning
-            _exportedWorldMapBitmap = SKBitmap.Decode(memoryStream);
+            try
+            {
+                await using var stream = File.OpenRead(bmpPath);
+                using var memory = new MemoryStream();
+                await stream.CopyToAsync(memory);
+                memory.Position = 0;
+                _exportedWorldMapBitmap = SKBitmap.Decode(memory);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _worldDataService.Log.AppendLine($"BMP map unavailable; using generated regions: {ex.Message}");
+            }
         }
     }
 
@@ -45,7 +86,7 @@ public class WorldMapImageGenerator(IWorld worldDataService) : IWorldMapImageGen
         int pixelWidth = _worldDataService.Width * tileSize;
         int pixelHeight = _worldDataService.Height * tileSize;
 
-        SKBitmap worldImage = GenerateBaseMapImage(tileSize, pixelWidth, pixelHeight);
+        using SKBitmap worldImage = GenerateBaseMapImage(tileSize, pixelWidth, pixelHeight);
 
         DrawRegionsAndObjects(worldImage, tileSize, objectWithCoordinates, depth);
 
@@ -70,6 +111,7 @@ public class WorldMapImageGenerator(IWorld worldDataService) : IWorldMapImageGen
         _worldMapMin = null;
         _worldMapMid = null;
         _worldMapMax = null;
+        _exportedWorldMapBitmap?.Dispose();
         _exportedWorldMapBitmap = null;
     }
 
@@ -96,7 +138,7 @@ public class WorldMapImageGenerator(IWorld worldDataService) : IWorldMapImageGen
         {
             using (var canvas = new SKCanvas(worldImage))
             {
-                // Draw the resized BMP as the base image
+                // Draw the resized exported terrain as the base image
                 canvas.DrawBitmap(_exportedWorldMapBitmap, new SKRect(0, 0, pixelWidth, pixelHeight));
             }
         }
@@ -114,6 +156,7 @@ public class WorldMapImageGenerator(IWorld worldDataService) : IWorldMapImageGen
     private void DrawRegionsAndObjects(SKBitmap worldImage, int tileSize, IHasCoordinates? objectWithCoordinates = null, int? depth = null)
     {
         IRegion[,] worldTiles = GetWorldTiles(depth);
+        bool keepPremiumTerrain = _exportedWorldMapBitmap != null && depth == null;
 
         int width = worldTiles.GetLength(0);
         int height = worldTiles.GetLength(1);
@@ -144,12 +187,11 @@ public class WorldMapImageGenerator(IWorld worldDataService) : IWorldMapImageGen
                     }
                     else
                     {
-                        // Otherwise, get the region type and color
+                        if (keepPremiumTerrain) continue;
                         RegionType regionType = worldTiles[x, y]?.RegionType ?? RegionType.Default;
                         tileColor = GetRegionColor(regionType, worldTiles[x, y]?.Id);
                     }
 
-                    // Draw a rectangle representing the tile
                     using (var paint = new SKPaint { Color = tileColor })
                     {
                         canvas.DrawRect(x * tileSize, y * tileSize, tileSize, tileSize, paint);
@@ -346,6 +388,245 @@ public class WorldMapImageGenerator(IWorld worldDataService) : IWorldMapImageGen
         {
             canvas.DrawCircle(pixelCenterX, pixelCenterY, Math.Max(2.5f, strokeThickness * 0.8f), paint);
         }
+    }
+
+    public static string? FindDfFile(string relativePath, IEnumerable<string>? installDirectories = null)
+    {
+        return (installDirectories ?? GetPotentialDfInstallDirectories())
+            .Select(root => Path.Combine(root, relativePath))
+            .FirstOrDefault(File.Exists);
+    }
+
+    private static IEnumerable<string> GetPotentialDfInstallDirectories()
+    {
+        var roots = new List<string>();
+
+        string? envDir = Environment.GetEnvironmentVariable("DF_INSTALL_DIR");
+        if (!string.IsNullOrWhiteSpace(envDir))
+        {
+            roots.Add(envDir);
+        }
+
+        string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        string programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+        string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+
+        var vdfPaths = new List<string>
+        {
+            Path.Combine(userProfile, ".local/share/Steam/steamapps/libraryfolders.vdf"),
+            Path.Combine(userProfile, ".steam/steam/steamapps/libraryfolders.vdf"),
+            Path.Combine(userProfile, ".steam/root/steamapps/libraryfolders.vdf"),
+            Path.Combine(userProfile, ".var/app/com.valvesoftware.Steam/data/Steam/steamapps/libraryfolders.vdf"),
+            Path.Combine(userProfile, ".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/libraryfolders.vdf"),
+            Path.Combine(userProfile, "Library/Application Support/Steam/steamapps/libraryfolders.vdf")
+        };
+
+        if (!string.IsNullOrWhiteSpace(programFilesX86))
+        {
+            vdfPaths.Add(Path.Combine(programFilesX86, "Steam", "steamapps", "libraryfolders.vdf"));
+        }
+        if (!string.IsNullOrWhiteSpace(programFiles))
+        {
+            vdfPaths.Add(Path.Combine(programFiles, "Steam", "steamapps", "libraryfolders.vdf"));
+        }
+
+        foreach (var vdfPath in vdfPaths)
+        {
+            if (!File.Exists(vdfPath)) continue;
+            try
+            {
+                foreach (var line in File.ReadLines(vdfPath))
+                {
+                    var match = Regex.Match(line, @"^\s*""path""\s*""([^""]+)""");
+                    if (match.Success)
+                    {
+                        string libPath = match.Groups[1].Value.Replace(@"\\", @"/");
+                        roots.Add(Path.Combine(libPath, "steamapps", "common", "Dwarf Fortress"));
+                        roots.Add(Path.Combine(libPath, "common", "Dwarf Fortress"));
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore read errors
+            }
+        }
+
+        roots.Add(Path.Combine(userProfile, ".local/share/Steam/steamapps/common/Dwarf Fortress"));
+        roots.Add(Path.Combine(userProfile, ".steam/steam/steamapps/common/Dwarf Fortress"));
+        roots.Add(Path.Combine(userProfile, ".steam/root/steamapps/common/Dwarf Fortress"));
+        roots.Add(Path.Combine(userProfile, ".var/app/com.valvesoftware.Steam/data/Steam/steamapps/common/Dwarf Fortress"));
+        roots.Add(Path.Combine(userProfile, ".local/share/Bay 12 Games/Dwarf Fortress"));
+
+        if (!string.IsNullOrWhiteSpace(programFilesX86))
+        {
+            roots.Add(Path.Combine(programFilesX86, "Steam", "steamapps", "common", "Dwarf Fortress"));
+        }
+        if (!string.IsNullOrWhiteSpace(programFiles))
+        {
+            roots.Add(Path.Combine(programFiles, "Steam", "steamapps", "common", "Dwarf Fortress"));
+        }
+
+        return roots.Where(r => !string.IsNullOrWhiteSpace(r)).Distinct();
+    }
+
+    private static SKBitmap LoadPremiumMap(string companion, string graphicsPath, string[] spritePaths)
+    {
+        var entries = File.ReadLines(graphicsPath)
+            .Select(line => Regex.Match(line,
+                @"^\[TILE_GRAPHICS:WORLD_MAP_(TILES|FORESTS|MOUNTAINS|DETAILS):(\d+):(\d+):([^:\]]+)(?::(\d+))?\]$"))
+            .Where(match => match.Success).ToArray();
+        var graphics = entries.ToDictionary(match => match.Groups[4].Value + ":" +
+                (match.Groups[5].Success ? match.Groups[5].Value : "1"),
+            match => (Sheet: match.Groups[1].Value, X: int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture),
+                      Y: int.Parse(match.Groups[3].Value, CultureInfo.InvariantCulture)));
+        var variantCounts = entries.GroupBy(match => match.Groups[4].Value)
+            .ToDictionary(group => group.Key, group => group.Count());
+
+        using var reader = new StreamReader(companion);
+        var header = (reader.ReadLine() ?? "").Split(',');
+        if (header.Length != 4 || header[0] != "DFHACK_WORLD_MAP" || header[1] != "3"
+            || !int.TryParse(header[2], out int width) || !int.TryParse(header[3], out int height)
+            || width is < 1 or > 300 || height is < 1 or > 300)
+            throw new InvalidDataException("Invalid world map companion header");
+        if (reader.ReadLine() != "x,y,biome_type,evilness,savagery,elevation,flags,volcanism,peak,river_dirs")
+            throw new InvalidDataException("Invalid world map companion columns");
+
+        using var tiles = SKBitmap.Decode(spritePaths[0]) ?? throw new InvalidDataException("Cannot decode terrain sprites");
+        using var forests = SKBitmap.Decode(spritePaths[1]) ?? throw new InvalidDataException("Cannot decode forest sprites");
+        using var mountains = SKBitmap.Decode(spritePaths[2]) ?? throw new InvalidDataException("Cannot decode mountain sprites");
+        using var details = SKBitmap.Decode(spritePaths[3]) ?? throw new InvalidDataException("Cannot decode detail sprites");
+        var sheets = new Dictionary<string, SKBitmap> { ["TILES"] = tiles, ["FORESTS"] = forests,
+            ["MOUNTAINS"] = mountains, ["DETAILS"] = details };
+        var result = new SKBitmap(width * 16, height * 16);
+        try
+        {
+            using var canvas = new SKCanvas(result);
+            var seen = new bool[width, height];
+            var map = new int[width, height][];
+            int count = 0;
+            for (string? line = reader.ReadLine(); line != null; line = reader.ReadLine())
+            {
+                var fields = line.Split(',');
+                if (fields.Length != 10 || !fields.All(f => int.TryParse(f, NumberStyles.Integer,
+                        CultureInfo.InvariantCulture, out _)))
+                    throw new InvalidDataException("Invalid world map companion row");
+                var values = fields.Select(f => int.Parse(f, CultureInfo.InvariantCulture)).ToArray();
+                int x = values[0], y = values[1];
+                if (x < 0 || x >= width || y < 0 || y >= height || seen[x, y])
+                    throw new InvalidDataException("Invalid or duplicate world map coordinate");
+                seen[x, y] = true;
+                map[x, y] = values;
+                count++;
+
+                string token = GetPremiumSpriteToken(values[2], values[3], values[4], values[5], values[6],
+                    values[7], values[8]);
+                DrawSprite(token);
+
+                void DrawSprite(string spriteToken)
+                {
+                    int variant = Math.Abs(x * 31 + y * 17) % variantCounts[spriteToken] + 1;
+                    if (!graphics.TryGetValue(spriteToken + ":" + variant, out var source))
+                        throw new InvalidDataException($"DF graphics do not define {spriteToken}:{variant}");
+                    if (source.Sheet is "FORESTS" or "MOUNTAINS")
+                        DrawSprite(GetPremiumBaseSpriteToken(values[2], values[3], values[4]));
+                    var sheet = sheets[source.Sheet];
+                    canvas.DrawBitmap(sheet, new SKRect(source.X * 16, source.Y * 16,
+                            source.X * 16 + 16, source.Y * 16 + 16),
+                        new SKRect(x * 16, y * 16, x * 16 + 16, y * 16 + 16));
+                }
+            }
+            if (count != width * height) throw new InvalidDataException("Incomplete world map companion");
+            for (int x = 0; x < width; x++)
+            for (int y = 0; y < height; y++)
+            {
+                int flags = map[x, y][6];
+                if ((flags & 4) != 0)
+                {
+                    DrawDetail(x, y, "ROAD_DIRT_" + GetDirectionSuffix(GetConnectedDirections(
+                        width, height, x, y, (nx, ny) => (map[nx, ny][6] & 4) != 0)));
+                }
+            }
+            return result;
+
+            void DrawDetail(int x, int y, string token)
+            {
+                if (!graphics.TryGetValue(token + ":1", out var source))
+                    throw new InvalidDataException($"DF graphics do not define {token}");
+                var sheet = sheets[source.Sheet];
+                canvas.DrawBitmap(sheet, new SKRect(source.X * 16, source.Y * 16, source.X * 16 + 16, source.Y * 16 + 16),
+                    new SKRect(x * 16, y * 16, x * 16 + 16, y * 16 + 16));
+            }
+        }
+        catch
+        {
+            result.Dispose();
+            throw;
+        }
+    }
+
+    public static string GetDirectionSuffix(int directions) => directions switch
+    {
+        0 => "0", 1 => "N", 2 => "S", 3 => "NS", 4 => "W", 5 => "NW", 6 => "SW", 7 => "NSW",
+        8 => "E", 9 => "NE", 10 => "SE", 11 => "NSE", 12 => "WE", 13 => "NWE", 14 => "SWE", 15 => "NSWE",
+        _ => throw new ArgumentOutOfRangeException(nameof(directions))
+    };
+
+    public static int GetConnectedDirections(int width, int height, int x, int y, Func<int, int, bool> connected)
+    {
+        int directions = 0;
+        if (y > 0 && connected(x, y - 1)) directions |= 1;
+        if (y + 1 < height && connected(x, y + 1)) directions |= 2;
+        if (x > 0 && connected(x - 1, y)) directions |= 4;
+        if (x + 1 < width && connected(x + 1, y)) directions |= 8;
+        return directions;
+    }
+
+    private static string GetPremiumBaseSpriteToken(int biome, int evilness, int savagery)
+    {
+        string token = biome == 0 ? "HILLS" : "SHRUBLAND";
+        if (evilness >= 66) token += savagery >= 66 ? "_EVILSAV" : "_EVIL";
+        else if (evilness < 33) token += savagery >= 66 ? "_GOODSAV" : "_GOOD";
+        return token;
+    }
+
+    public static string GetPremiumSpriteToken(int biome, int evilness, int savagery,
+        int elevation, int flags, int volcanism, int peak)
+    {
+        string token = peak == 2 || (biome == 0 && volcanism >= 100) ? "VOLCANO"
+            : (flags & 1) != 0 || biome is >= 30 and <= 41 ? "LAKE" : biome switch
+        {
+            0 when peak == 1 => "MOUNTAIN_PEAK",
+            0 when elevation >= 250 => "MOUNTAIN_HIGH",
+            0 when elevation >= 200 => "MOUNTAIN_MID",
+            0 => "MOUNTAIN_LOW",
+            1 => "GLACIER",
+            2 => "TUNDRA",
+            >= 3 and <= 4 or >= 7 and <= 9 => "SWAMP",
+            >= 5 and <= 6 or >= 10 and <= 11 => "MARSH",
+            12 => "FOREST_TAIGA",
+            13 => "FOREST_CONIFER_TEMP",
+            14 => "FOREST_BROADLEAF_TEMP",
+            15 => "FOREST_CONIFER_TROP",
+            16 => "FOREST_BROADLEAF_TROP_DRY",
+            17 => "FOREST_BROADLEAF_TROP_MOIST",
+            18 => "GRASSLAND_TEMP",
+            19 => "SAVANNA_TEMP",
+            20 => "SHRUBLAND",
+            21 => "GRASSLAND_TROP",
+            22 => "SAVANNA_TROP",
+            23 => "SHRUBLAND",
+            24 => "BADLANDS",
+            25 => "ROCKY_PLAINS",
+            26 => "SAND_DESERT",
+            29 => "FROZEN_OCEAN",
+            >= 27 and <= 28 when elevation < 50 => "OCEAN_DEEP",
+            >= 27 and <= 29 => "OCEAN",
+            _ => throw new InvalidDataException($"Unsupported biome type {biome}")
+        };
+        if (evilness >= 66) token += savagery >= 66 ? "_EVILSAV" : "_EVIL";
+        else if (evilness < 33) token += savagery >= 66 ? "_GOODSAV" : "_GOOD";
+        return token;
     }
 
     private bool TryGetCachedMap(int tileSize, out byte[]? imageData)

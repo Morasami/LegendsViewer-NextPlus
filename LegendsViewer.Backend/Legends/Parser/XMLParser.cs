@@ -24,9 +24,12 @@ public class XmlParser : IDisposable
     {
         World = world;
         _xmlStream = new FilteredStream(new FileStream(xmlFile, FileMode.Open, FileAccess.Read, FileShare.Read));
-        XmlReader = XmlReader.Create(
-            _xmlStream,
-            new XmlReaderSettings { Async = true, IgnoreWhitespace = true, IgnoreComments = true, IgnoreProcessingInstructions = true });
+        // Premium exports UTF-8 bytes but still declare the legacy CP437 encoding.
+        var settings = new XmlReaderSettings { Async = true, IgnoreWhitespace = true, IgnoreComments = true, IgnoreProcessingInstructions = true };
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        XmlReader = ExportEncoding.IsUtf8(xmlFile)
+            ? XmlReader.Create(new StreamReader(_xmlStream, System.Text.Encoding.UTF8), settings)
+            : XmlReader.Create(_xmlStream, settings);
     }
 
     public XmlParser(IWorld world, string xmlFile, string? xmlPlusFile) : this(world, xmlFile)
