@@ -556,6 +556,180 @@ public class BookmarkServiceTests : IDisposable
         Assert.AreEqual(BookmarkState.Loaded, world2.State, "World2 should be in Loaded state");
     }
 
+    [TestMethod]
+    public void DefaultStoragePath_ShouldUseNextPlusApplicationData()
+    {
+        // Resolve without constructing the default service or touching real application data.
+        var method = typeof(BookmarkService).GetMethod("GetDefaultBookmarkFilePath",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        Assert.IsNotNull(method);
+        var path = (string?)method.Invoke(null, null);
+        Assert.AreEqual(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "LegendsViewer-NextPlus", "bookmarks.json"), path);
+    }
+
+    [TestMethod]
+    public void SeparateStorage_ShouldNotLoadOrChangeOriginalBookmarks()
+    {
+        // Both directories are isolated fixtures, never the user's real AppData.
+        var originalPath = Path.Combine(_testFolder, "LegendsViewer", "bookmarks.json");
+        new BookmarkService(originalPath).AddBookmark(
+            CreateTestBookmark("original-00001-01-01-legends.xml", "Original", "00001-01-01"));
+        var originalBytes = File.ReadAllBytes(originalPath);
+        var nextPlusPath = Path.Combine(_testFolder, "LegendsViewer-NextPlus", "bookmarks.json");
+        var service = new BookmarkService(nextPlusPath);
+        Assert.AreEqual(0, service.GetAll().Count);
+        service.AddBookmark(CreateTestBookmark("next-00001-01-01-legends.xml", "NextPlus", "00001-01-01"));
+        Assert.AreEqual("NextPlus", new BookmarkService(nextPlusPath).GetAll().Single().WorldName);
+        CollectionAssert.AreEqual(originalBytes, File.ReadAllBytes(originalPath));
+    }
+
+    [TestMethod]
+    public void Persistence_ShouldReloadMergedTimestampsAndDeletions()
+    {
+        var service = CreateService();
+        var firstPath = Path.Combine(_testFolder, "world-00001-01-01-legends.xml");
+        var secondPath = Path.Combine(_testFolder, "world-00002-01-01-legends.xml");
+        service.AddBookmark(CreateTestBookmark(firstPath, "World", "00001-01-01"));
+        service.AddBookmark(CreateTestBookmark(secondPath, "World", "00002-01-01"));
+        var reloaded = new BookmarkService(BookmarkFilePath);
+        var bookmark = reloaded.GetBookmark(secondPath);
+        Assert.IsNotNull(bookmark);
+        Assert.AreEqual("World_TestRegion", bookmark.Id);
+        CollectionAssert.AreEquivalent(new[] { "00001-01-01", "00002-01-01" }, bookmark.WorldTimestamps);
+        Assert.AreEqual(BookmarkState.Default, bookmark.State);
+        Assert.IsNull(bookmark.LoadedTimestamp);
+        Assert.AreEqual("00002-01-01", bookmark.LatestTimestamp);
+        Assert.IsTrue(reloaded.DeleteBookmarkTimestamp(firstPath).Success);
+        var afterDelete = new BookmarkService(BookmarkFilePath);
+        CollectionAssert.AreEqual(new[] { "00002-01-01" }, afterDelete.GetAll().Single().WorldTimestamps);
+        Assert.IsTrue(afterDelete.DeleteBookmarkTimestamp(secondPath).Success);
+        Assert.AreEqual(0, new BookmarkService(BookmarkFilePath).GetAll().Count);
+        Assert.AreEqual(0, Directory.GetFiles(_testFolder, "*.tmp").Length);
+    }
+
+    [TestMethod]
+    public void BookmarkInputsAndResults_ShouldBeDetachedSnapshots()
+    {
+        var service = CreateService();
+        var input = CreateTestBookmark("world-00001-01-01-legends.xml", "World", "00001-01-01",
+            ["00002-01-01"]);
+        input.WorldMapImage = [1, 2, 3];
+        var added = service.AddBookmark(input);
+        var all = service.GetAll();
+        var found = service.GetBookmark(input.FilePath)!;
+        input.WorldTimestamps.Clear();
+        input.WorldMapImage[0] = 9;
+        added.WorldTimestamps.Clear();
+        added.WorldMapImage![0] = 8;
+        all[0].WorldTimestamps.Clear();
+        all[0].WorldMapImage![0] = 7;
+        found.WorldTimestamps.Clear();
+        found.WorldMapImage![0] = 6;
+        var deleted = service.DeleteBookmarkTimestamp(input.FilePath);
+        Assert.IsTrue(deleted.Success);
+        Assert.IsNotNull(deleted.Bookmark);
+        deleted.Bookmark.WorldTimestamps.Clear();
+        var stored = service.GetAll().Single();
+        CollectionAssert.AreEqual(new[] { "00002-01-01" }, stored.WorldTimestamps);
+        CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, stored.WorldMapImage);
+        Assert.AreEqual(BookmarkState.Loaded, added.State);
+        Assert.AreEqual("00001-01-01", added.LoadedTimestamp);
+    }
+
+    [TestMethod]
+    public void Concurrent_SameWorldAdds_ShouldMergeEveryTimestampAndPersist()
+    {
+        var service = CreateService();
+        Parallel.For(1, 21, i =>
+        {
+            var timestamp = $"{i:D5}-01-01";
+            service.AddBookmark(CreateTestBookmark($"world-{timestamp}-legends.xml", "World", timestamp));
+        });
+        var bookmark = service.GetAll().Single();
+        Assert.AreEqual("World_TestRegion", bookmark.Id);
+        var expected = Enumerable.Range(1, 20).Select(i => $"{i:D5}-01-01").ToArray();
+        CollectionAssert.AreEquivalent(expected, bookmark.WorldTimestamps);
+        CollectionAssert.AreEquivalent(expected, new BookmarkService(BookmarkFilePath).GetAll().Single().WorldTimestamps);
+        Assert.AreEqual(BookmarkState.Loaded, bookmark.State);
+    }
+
+    [TestMethod]
+    public void Concurrent_AddDeleteAndRead_ShouldKeepConsistentSnapshotsAndPersist()
+    {
+        var service = CreateService();
+        var timestamps = Enumerable.Range(1, 10).Select(i => $"{i:D5}-01-01").ToArray();
+        service.AddBookmark(CreateTestBookmark("world-00001-01-01-legends.xml", "World", timestamps[0], timestamps[1..]));
+        Parallel.For(0, 30, i =>
+        {
+            if (i < 10)
+            {
+                Assert.IsTrue(service.DeleteBookmarkTimestamp($"world-{timestamps[i]}-legends.xml").Success);
+            }
+            else if (i < 20)
+            {
+                var timestamp = $"{i + 1:D5}-01-01";
+                service.AddBookmark(CreateTestBookmark($"world-{timestamp}-legends.xml", "World", timestamp));
+            }
+            else
+            {
+                // Enumerating/serializing a result outside the service lock must be safe.
+                foreach (var bookmark in service.GetAll())
+                {
+                    Assert.AreEqual(bookmark.WorldTimestamps.Count, bookmark.WorldTimestamps.Distinct().Count());
+                    JsonSerializer.Serialize(bookmark);
+                }
+                service.GetBookmark("world-00001-01-01-legends.xml");
+            }
+        });
+        var expected = Enumerable.Range(11, 10).Select(i => $"{i:D5}-01-01").ToArray();
+        CollectionAssert.AreEquivalent(expected, service.GetAll().Single().WorldTimestamps);
+        CollectionAssert.AreEquivalent(expected, new BookmarkService(BookmarkFilePath).GetAll().Single().WorldTimestamps);
+    }
+
+    [TestMethod]
+    public void Save_WithOpenReader_ShouldPreserveCompleteOldAndNewJson()
+    {
+        var service = CreateService();
+        service.AddBookmark(CreateTestBookmark("world-00001-01-01-legends.xml", "World", "00001-01-01"));
+        // Keep the previous file version open while a save replaces it. An in-place
+        // truncate/write would change this reader's contents as well.
+        using var previousVersion = new FileStream(BookmarkFilePath, FileMode.Open, FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+        service.AddBookmark(CreateTestBookmark("world-00002-01-01-legends.xml", "World", "00002-01-01"));
+        var previous = JsonSerializer.Deserialize<Dictionary<string, Bookmark>>(previousVersion);
+        Assert.IsNotNull(previous);
+        CollectionAssert.AreEqual(new[] { "00001-01-01" }, previous["World_TestRegion"].WorldTimestamps);
+        var current = new BookmarkService(BookmarkFilePath).GetAll().Single();
+        CollectionAssert.AreEquivalent(new[] { "00001-01-01", "00002-01-01" }, current.WorldTimestamps);
+    }
+
+    [TestMethod]
+    public void SaveFailure_ShouldPropagateAndCleanTemporaryFile()
+    {
+        var service = CreateService();
+        // A directory at the destination deterministically prevents replacing it on all platforms.
+        Directory.CreateDirectory(BookmarkFilePath);
+        try
+        {
+            service.AddBookmark(CreateTestBookmark("world-00001-01-01-legends.xml", "World", "00001-01-01"));
+            Assert.Fail("Saving to a directory must report a file error.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Platforms differ in how they report a directory blocking the destination.
+        }
+        Assert.AreEqual(0, Directory.GetFiles(_testFolder, "*.tmp").Length);
+        Assert.IsTrue(Directory.Exists(BookmarkFilePath));
+    }
+
+    [TestMethod]
+    public void LoadInvalidJson_ShouldPropagateError()
+    {
+        File.WriteAllText(BookmarkFilePath, "{invalid JSON");
+        Assert.ThrowsException<JsonException>(() => new BookmarkService(BookmarkFilePath));
+    }
+
     private static Bookmark CreateTestBookmark(
         string filePath,
         string worldName,
