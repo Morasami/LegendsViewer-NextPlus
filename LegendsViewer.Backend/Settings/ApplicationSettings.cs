@@ -8,6 +8,7 @@ public record ApplicationSettings
     public string? InstallationPath { get; init; }
     public bool ExplicitSelection { get; init; }
     public string? PreferredExportDirectory { get; init; }
+    public string[] ExportDirectories { get; init; } = [];
 }
 
 public sealed class ApplicationSettingsService
@@ -18,6 +19,11 @@ public sealed class ApplicationSettingsService
     public ApplicationSettingsService() : this(Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LegendsViewer-NextPlus", "settings.json")) { }
     public ApplicationSettingsService(string filePath) => this.filePath = Path.GetFullPath(filePath);
+
+    public void Update(Func<ApplicationSettings, ApplicationSettings> update)
+    {
+        lock (gate) Save(update(Read()));
+    }
 
     public ApplicationSettings Read()
     {

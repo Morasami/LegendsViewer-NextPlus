@@ -1054,7 +1054,9 @@ export default defineComponent({
           ownerLayers[key].addTo(leafletMap.value);
         }
         if (!controlLayers.value) {
-          controlLayers.value = L.control.layers(undefined, layersControl, { collapsed: false }).addTo(leafletMap.value);
+          controlLayers.value = L.control.layers(undefined, layersControl, {
+            collapsed: window.matchMedia('(max-width: 600px)').matches
+          }).addTo(leafletMap.value);
         }
 
         syncTileBadges();
@@ -1166,6 +1168,10 @@ export default defineComponent({
 
 .leaflet-control-layers-overlays label {
   margin-top: 4px;
+}
+
+@media (max-width: 600px) {
+  .leaflet-control-layers-overlays { max-height: 40vh; max-width: 180px; overflow-y: auto; }
 }
 
 .site-picker__heading {

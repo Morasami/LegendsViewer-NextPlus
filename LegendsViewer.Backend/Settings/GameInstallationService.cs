@@ -135,7 +135,7 @@ public sealed class GameInstallationService(ApplicationSettingsService settings,
     {
         var installation = Validate(path);
         if (!installation.Valid) throw new ArgumentException(installation.Status);
-        settings.Save(settings.Read() with { InstallationPath = installation.Path, ExplicitSelection = true });
+        settings.Update(saved => saved with { InstallationPath = installation.Path, ExplicitSelection = true });
         return Discover();
     }
 

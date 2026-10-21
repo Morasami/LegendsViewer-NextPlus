@@ -43,6 +43,7 @@ public class Program
         builder.Services.AddSingleton<ApplicationSettingsService>();
         builder.Services.AddSingleton<InstallationLocations>();
         builder.Services.AddSingleton<GameInstallationService>();
+        builder.Services.AddSingleton<WorldLibrary.WorldLibraryService>();
         builder.Services.AddSingleton<IWorldMapImageGenerator>(services => new WorldMapImageGenerator(
             services.GetRequiredService<IWorld>(), services.GetRequiredService<GameInstallationService>().FindFile));
         builder.Services.AddSingleton<IBookmarkService, BookmarkService>();
