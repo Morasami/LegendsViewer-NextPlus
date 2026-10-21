@@ -41,23 +41,23 @@ public class FileSystemController : ControllerBase
             directoryName = Path.GetDirectoryName(path) ?? Directory.GetCurrentDirectory();
         }
 
-        var response = new FilesAndSubdirectoriesDto
+        return Ok(BrowseDirectory(directoryName));
+    }
+
+    internal static FilesAndSubdirectoriesDto BrowseDirectory(string directoryName, bool foldersOnly = false)
+    {
+        return new FilesAndSubdirectoriesDto
         {
             CurrentDirectory = directoryName,
             ParentDirectory = Directory.GetParent(directoryName)?.FullName ?? "mounts",
             Subdirectories = Directory.GetDirectories(directoryName)
-                .Select(subDirectoryPath => Path.GetRelativePath(directoryName, subDirectoryPath))
-                .Where(IsNotUnixHiddenPath)
-                .Order() // sort alphabetically
-                .ToArray(),
-            Files = Directory.GetFiles(directoryName, $"*{BookmarkController.FileIdentifierLegendsXml}")
+                .Where(path => IsNotUnixHiddenPath(Path.GetFileName(path)))
+                .Select(path => foldersOnly ? path : Path.GetRelativePath(directoryName, path))
+                .Order().ToArray(),
+            Files = foldersOnly ? [] : Directory.GetFiles(directoryName, $"*{BookmarkController.FileIdentifierLegendsXml}")
                 .Select(f => Path.GetFileName(f) ?? "")
-                .Where(IsNotUnixHiddenPath)
-                .Order()
-                .ToArray()
+                .Where(IsNotUnixHiddenPath).Order().ToArray()
         };
-
-        return Ok(response);
     }
 
     [HttpGet("{encodedCurrentPath}/{encodedSubFolder}")]

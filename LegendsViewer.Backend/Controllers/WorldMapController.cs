@@ -1,3 +1,4 @@
+using LegendsViewer.Backend.Settings;
 using LegendsViewer.Backend.Contracts;
 using LegendsViewer.Backend.Legends;
 using LegendsViewer.Backend.Legends.EventCollections;
@@ -13,15 +14,16 @@ namespace LegendsViewer.Backend.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class WorldMapController(IWorld worldDataService, IWorldMapImageGenerator worldMapImageGenerator) : ControllerBase
+public class WorldMapController(IWorld worldDataService, IWorldMapImageGenerator worldMapImageGenerator, GameInstallationService? installations = null) : ControllerBase
 {
     private readonly IWorld _worldDataService = worldDataService;
     private readonly IWorldMapImageGenerator _worldMapImageGenerator = worldMapImageGenerator;
 
     [HttpGet("game-site-icons")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public IActionResult GetGameSiteIcons()
     {
-        var path = WorldMapImageGenerator.FindDfFile(
+        var path = installations?.FindFile(
             "data/vanilla/vanilla_world_map/graphics/images/world_map_details.png");
         return path == null ? NotFound() : PhysicalFile(path, "image/png");
     }

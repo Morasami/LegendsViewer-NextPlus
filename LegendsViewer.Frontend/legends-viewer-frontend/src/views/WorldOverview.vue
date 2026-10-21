@@ -1,5 +1,6 @@
 <!--suppress ALL -->
 <script setup lang="ts">
+import GameSettings from '../components/GameSettings.vue';
 import {computed, onUnmounted, ref} from 'vue';
 import { useBookmarkStore } from '../stores/bookmarkStore';
 import {dfDirectoryStorageKey, useFileSystemStore} from '../stores/fileSystemStore';
@@ -98,6 +99,7 @@ const closeSnackbar = () => {
 </script>
 
 <template>
+  <GameSettings />
   <v-row dense>
     <v-col cols="12" md="3">
       <v-card class="mx-auto" max-width="320">
@@ -224,6 +226,9 @@ const closeSnackbar = () => {
           </v-card-subtitle>
 
           <v-card-actions>
+            <v-btn v-if="bookmark.filePath && bookmark.state === 'Loaded'" text="Reload"
+              :disabled="bookmarkStore.isLoading" variant="tonal"
+              @click="bookmarkStore.loadByFullPath(bookmark.filePath ?? '', bookmark.loadedTimestamp ?? '')" />
             <v-btn
               v-if="bookmark.filePath && bookmark.state !== 'Loaded' || bookmark.latestTimestamp !== bookmark.loadedTimestamp"
               :loading="bookmark.state === 'Loading'" color="blue" text="Load" :disabled="bookmarkStore.isLoading"

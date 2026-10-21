@@ -1,6 +1,7 @@
 using LegendsViewer.Backend.Legends;
 using LegendsViewer.Backend.Legends.Maps;
 using SkiaSharp;
+using LegendsViewer.Backend.Settings;
 
 namespace LegendsViewer.Backend.Tests;
 
@@ -118,6 +119,39 @@ public class MapCompatibilityTests : IDisposable
             File.Delete(Csv);
             await generator.LoadExportedWorldMapAsync(Xml);
             Assert.AreNotEqual(SKColors.Lime, Pixel(generator));
+        }
+        finally { generator.Clear(); }
+    }
+
+    [TestMethod]
+    public async Task PersistedInstallationSuppliesMapGraphicsAndCanChangeWithoutRestart()
+    {
+        var settings = new ApplicationSettingsService(Path.Combine(_directory, "settings.json"));
+        var installations = new GameInstallationService(settings, new InstallationLocations());
+        string Install(string name, SKColor color)
+        {
+            var root = Path.Combine(_directory, name);
+            Directory.CreateDirectory(Path.Combine(root, GameInstallationService.GraphicsDirectory, "images"));
+            File.WriteAllText(Path.Combine(root, "Dwarf Fortress.exe"), "synthetic executable");
+            foreach (var file in GameInstallationService.GraphicsFiles)
+                File.Copy(Path.Combine(_directory, Path.GetFileName(file)), Path.Combine(root, file));
+            using var bitmap = new SKBitmap(16, 16);
+            bitmap.Erase(color);
+            using var png = bitmap.Encode(SKEncodedImageFormat.Png, 100);
+            File.WriteAllBytes(Path.Combine(root, GameInstallationService.GraphicsDirectory, "images/world_map_tiles.png"), png.ToArray());
+            return root;
+        }
+        var first = Install("first", SKColors.Lime);
+        var second = Install("second", SKColors.Blue);
+        installations.Save(first);
+        var generator = new WorldMapImageGenerator(_world, installations.FindFile);
+        try
+        {
+            await generator.LoadExportedWorldMapAsync(Xml);
+            Assert.AreEqual(SKColors.Lime, Pixel(generator));
+            installations.Save(second);
+            await generator.LoadExportedWorldMapAsync(Xml);
+            Assert.AreEqual(SKColors.Blue, Pixel(generator));
         }
         finally { generator.Clear(); }
     }
