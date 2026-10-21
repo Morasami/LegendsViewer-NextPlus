@@ -487,3 +487,6 @@ $RECYCLE.BIN/
 .team/
 
 *.tsbuildinfo
+
+docs/
+.kilo/
