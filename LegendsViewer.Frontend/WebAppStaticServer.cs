@@ -23,7 +23,7 @@ public static class WebAppStaticServer
 
         try
         {
-            await app.RunAsync($"http://*:{WebAppPort}");
+            await app.RunAsync($"http://localhost:{WebAppPort}");
         }
         catch (IOException exception) when (exception.InnerException is AddressInUseException)
         {

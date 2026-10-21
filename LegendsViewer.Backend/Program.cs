@@ -1,4 +1,5 @@
 ﻿
+using LegendsViewer.Backend.Settings;
 using LegendsViewer.Backend.Extensions;
 using LegendsViewer.Backend.Legends;
 using LegendsViewer.Backend.Legends.Bookmarks;
@@ -15,7 +16,7 @@ namespace LegendsViewer.Backend;
 
 public class Program
 {
-    private const string AllowAllOriginsPolicy = "AllowAllOrigins";
+    private const string LocalOriginsPolicy = "LocalOrigins";
     public const uint BackendPort = 15421;
     public static readonly string BackendUrl = $"http://localhost:{BackendPort}";
 
@@ -24,9 +25,9 @@ public class Program
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
         var builder = WebApplication.CreateBuilder(args);
-        builder.Services.AddCors(o => o.AddPolicy(AllowAllOriginsPolicy, builder =>
+        builder.Services.AddCors(o => o.AddPolicy(LocalOriginsPolicy, builder =>
         {
-            builder.AllowAnyOrigin()
+            builder.WithOrigins(LocalBrowserAccess.Origins)
                    .AllowAnyMethod()
                    .AllowAnyHeader();
         }));
@@ -39,7 +40,11 @@ public class Program
         .UseUrls(BackendUrl);
 
         builder.Services.AddSingleton<IWorld, World>();
-        builder.Services.AddSingleton<IWorldMapImageGenerator, WorldMapImageGenerator>();
+        builder.Services.AddSingleton<ApplicationSettingsService>();
+        builder.Services.AddSingleton<InstallationLocations>();
+        builder.Services.AddSingleton<GameInstallationService>();
+        builder.Services.AddSingleton<IWorldMapImageGenerator>(services => new WorldMapImageGenerator(
+            services.GetRequiredService<IWorld>(), services.GetRequiredService<GameInstallationService>().FindFile));
         builder.Services.AddSingleton<IBookmarkService, BookmarkService>();
         builder.Services.AddClassicRepositories();
 
@@ -65,7 +70,16 @@ public class Program
             app.UseSwaggerUI();
         }
 
-        app.UseCors(AllowAllOriginsPolicy);
+        app.Use(async (context, next) =>
+        {
+            if (!LocalBrowserAccess.IsAllowed(context.Request))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+            await next();
+        });
+        app.UseCors(LocalOriginsPolicy);
 
         app.UseAuthorization();
         app.MapControllers();
