@@ -6922,6 +6922,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/FileSystem/browse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    path?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["FilesAndSubdirectoriesDto"];
+                        "application/json": components["schemas"]["FilesAndSubdirectoriesDto"];
+                        "text/json": components["schemas"]["FilesAndSubdirectoriesDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ProblemDetails"];
+                        "application/json": components["schemas"]["ProblemDetails"];
+                        "text/json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/FileSystem": {
         parameters: {
             query?: never;
@@ -19081,6 +19131,156 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/world-library": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["LibraryState"];
+                        "application/json": components["schemas"]["LibraryState"];
+                        "text/json": components["schemas"]["LibraryState"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/world-library/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["LibraryState"];
+                        "application/json": components["schemas"]["LibraryState"];
+                        "text/json": components["schemas"]["LibraryState"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ProblemDetails"];
+                        "application/json": components["schemas"]["ProblemDetails"];
+                        "text/json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/world-library/directories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["ExportDirectoriesRequest"];
+                    "text/json": components["schemas"]["ExportDirectoriesRequest"];
+                    "application/*+json": components["schemas"]["ExportDirectoriesRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["LibraryState"];
+                        "application/json": components["schemas"]["LibraryState"];
+                        "text/json": components["schemas"]["LibraryState"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ProblemDetails"];
+                        "application/json": components["schemas"]["ProblemDetails"];
+                        "text/json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Internal Server Error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ProblemDetails"];
+                        "application/json": components["schemas"]["ProblemDetails"];
+                        "text/json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/WorldMap/game-site-icons": {
         parameters: {
             query?: never;
@@ -20408,6 +20608,7 @@ export interface components {
             installationPath?: string | null;
             explicitSelection?: boolean;
             preferredExportDirectory?: string | null;
+            exportDirectories?: string[] | null;
         };
         Artifact: {
             /** Format: int32 */
@@ -20957,6 +21158,23 @@ export interface components {
         };
         /** @enum {string} */
         Evilness: "Neutral" | "Good" | "Evil";
+        ExportDirectoriesRequest: {
+            paths?: string[] | null;
+        };
+        ExportFile: {
+            kind?: string | null;
+            path?: string | null;
+            status?: string | null;
+            /** Format: int64 */
+            size?: number | null;
+            /** Format: date-time */
+            modifiedUtc?: string | null;
+        };
+        ExportRoot: {
+            path?: string | null;
+            source?: string | null;
+            warning?: string | null;
+        };
         FilesAndSubdirectoriesDto: {
             currentDirectory?: string | null;
             parentDirectory?: string | null;
@@ -21187,6 +21405,36 @@ export interface components {
             deathYear?: number;
             deathCause?: string | null;
             predecessorRelation?: string | null;
+        };
+        LibrarySnapshot: {
+            id?: string | null;
+            worldId?: string | null;
+            directory?: string | null;
+            prefix?: string | null;
+            region?: string | null;
+            date?: string | null;
+            name?: string | null;
+            alternativeName?: string | null;
+            identityEvidence?: string | null;
+            /** Format: int32 */
+            width?: number | null;
+            /** Format: int32 */
+            height?: number | null;
+            /** Format: byte */
+            thumbnail?: string | null;
+            files?: components["schemas"]["ExportFile"][] | null;
+            status?: string | null;
+            warning?: string | null;
+            /** Format: date-time */
+            lastSeenUtc?: string;
+            readonly available?: boolean;
+        };
+        LibraryState: {
+            snapshots?: components["schemas"]["LibrarySnapshot"][] | null;
+            roots?: components["schemas"]["ExportRoot"][] | null;
+            exportDirectories?: string[] | null;
+            premiumGraphicsAvailable?: boolean;
+            warning?: string | null;
         };
         ListItemDto: {
             append?: string | null;

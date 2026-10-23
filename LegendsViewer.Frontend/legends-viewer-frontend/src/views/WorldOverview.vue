@@ -1,6 +1,7 @@
 <!--suppress ALL -->
 <script setup lang="ts">
 import GameSettings from '../components/GameSettings.vue';
+import WorldLibrary from '../components/WorldLibrary.vue';
 import {computed, onUnmounted, ref} from 'vue';
 import { useBookmarkStore } from '../stores/bookmarkStore';
 import {dfDirectoryStorageKey, useFileSystemStore} from '../stores/fileSystemStore';
@@ -100,11 +101,13 @@ const closeSnackbar = () => {
 
 <template>
   <GameSettings />
+  <WorldLibrary />
+  <h2 class="text-h5 my-4">Bookmarks &amp; manual import</h2>
   <v-row dense>
     <v-col cols="12" md="3">
       <v-card class="mx-auto" max-width="320">
-        <v-container>
-          <v-icon icon="mdi-earth-box-plus" size="300"></v-icon>
+        <v-container class="d-flex justify-center">
+          <v-icon icon="mdi-earth-box-plus" size="220"></v-icon>
         </v-container>
 
         <v-card-title>
@@ -116,7 +119,7 @@ const closeSnackbar = () => {
         </v-card-subtitle>
 
         <v-card-actions>
-          <v-dialog width="auto" min-width="480">
+          <v-dialog width="720" max-width="calc(100vw - 24px)">
             <template v-slot:activator="{ props: activatorProps }">
               <v-btn color="orange-lighten-2" prepend-icon="mdi-earth" text="Select" variant="tonal" class="ml-1"
                 v-bind="activatorProps" :disabled="bookmarkStore.isLoading" :loading="bookmarkStore.isLoading"></v-btn>
@@ -130,6 +133,8 @@ const closeSnackbar = () => {
                     If other files related to the same export are present,
                     they will be automatically detected and included when you select the main file.
                   </v-alert> 
+                  <v-alert v-if="fileSystemStore.error" type="warning" class="mb-3">{{ fileSystemStore.error }}</v-alert>
+                  <v-btn class="mb-3" @click="fileSystemStore.loadDirectory('mounts')">Drives / mounts</v-btn>
 
                   <v-form>
                     <v-text-field v-model="fileSystemStore.filesAndSubdirectories.currentDirectory" readonly
@@ -205,7 +210,7 @@ const closeSnackbar = () => {
       <v-col v-if="bookmark != null && bookmark.filePath" :for="i" cols="12" md="3">
         <v-card class="mx-auto" max-width="320">
           <v-container>
-            <v-img height="300px" width="300px" class="pixelated-image" :src="getImageData(bookmark)"></v-img>
+            <v-img max-height="300" aspect-ratio="1" class="pixelated-image" :src="getImageData(bookmark)"></v-img>
           </v-container>
 
           <v-card-title>
@@ -225,7 +230,7 @@ const closeSnackbar = () => {
             }}
           </v-card-subtitle>
 
-          <v-card-actions>
+          <v-card-actions class="world-bookmark-actions">
             <v-btn v-if="bookmark.filePath && bookmark.state === 'Loaded'" text="Reload"
               :disabled="bookmarkStore.isLoading" variant="tonal"
               @click="bookmarkStore.loadByFullPath(bookmark.filePath ?? '', bookmark.loadedTimestamp ?? '')" />
@@ -301,3 +306,7 @@ const closeSnackbar = () => {
     </template>
   </v-snackbar>
 </template>
+
+<style scoped>
+.world-bookmark-actions { flex-wrap: wrap; gap: 4px; }
+</style>

@@ -13,4 +13,5 @@ public interface IBookmarkService
     DeleteResult DeleteBookmarkTimestamp(string filePath);
     List<Bookmark> GetAll();
     Bookmark? GetBookmark(string filePath);
+    void MarkUnloaded();
 }

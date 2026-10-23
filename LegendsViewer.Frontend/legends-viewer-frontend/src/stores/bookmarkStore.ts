@@ -43,45 +43,52 @@ export const useBookmarkStore = defineStore('bookmark', {
         this.isLoadingNewWorld = true;
       }
 
-      const { data, error } = await client.POST("/api/Bookmark/loadByFullPath", {
-        body: filePath.replace("{TIMESTAMP}", latestTimestamp), // Send the filePath as raw text
-      });
+      try {
+        const { data, error } = await client.POST("/api/Bookmark/loadByFullPath", {
+          body: filePath.replace("{TIMESTAMP}", latestTimestamp), // Send the filePath as raw text
+        });
 
-      // Check if this response is still the latest request (race condition fix)
-      if (requestId !== currentRequestId) {
-        return; // Stale response, ignore it
-      }
+        // Check if this response is still the latest request (race condition fix)
+        if (requestId !== currentRequestId) {
+          return; // Stale response, ignore it
+        }
 
-      if (error !== undefined) {
-        console.error(error);
-        let existingBookmark = this.bookmarks.find(bookmark => bookmark.filePath === filePath);
-        if (existingBookmark) {
-          existingBookmark.state = 'Default';
-        }
-        this.isLoadingNewWorld = false;
-        this.bookmarkError = error.title ?? error.type ?? '';
-      } else if (data) {
-        const newBookmark = data as Bookmark;
-        if (newBookmark.worldName == null || newBookmark.worldName.length == 0) {
-          this.bookmarkWarning = 'The legends_plus.xml file was not found. Dwarf Fortress currently exports only a limited amount of legends data. To access more detailed information, including proper maps and other important features, please install DFHack, which will automatically export the additional data.'
-        }
-        // Check if the bookmark already exists (computed AFTER await)
-        const index = this.bookmarks.findIndex(bookmark => bookmark.filePath === newBookmark.filePath);
-        this.bookmarks.forEach(b => b.state = 'Default')
-        if (index !== -1) {
-          // Update the existing bookmark
-          this.bookmarks[index] = newBookmark;
+        if (error !== undefined) {
+          console.error(error);
+          let existingBookmark = this.bookmarks.find(bookmark => bookmark.filePath === filePath);
+          if (existingBookmark) {
+            existingBookmark.state = 'Default';
+          }
+          this.isLoadingNewWorld = false;
+          this.bookmarks.forEach(b => b.state = 'Default');
+          this.bookmarkError = typeof error === 'string' ? error : (error.detail ?? error.title ?? error.type ?? '');
+        } else if (data) {
+          const newBookmark = data as Bookmark;
+          if (newBookmark.worldName == null || newBookmark.worldName.length == 0) {
+            this.bookmarkWarning = 'The legends_plus.xml file was not found. Dwarf Fortress currently exports only a limited amount of legends data. To access more detailed information, including proper maps and other important features, please install DFHack, which will automatically export the additional data.'
+          }
+          // Check if the bookmark already exists (computed AFTER await)
+          const index = this.bookmarks.findIndex(bookmark => bookmark.filePath === newBookmark.filePath);
+          this.bookmarks.forEach(b => b.state = 'Default')
+          if (index !== -1) {
+            // Update the existing bookmark
+            this.bookmarks[index] = newBookmark;
+          } else {
+            // Add the new bookmark to the array
+            this.bookmarks.push(newBookmark);
+          }
+
+          useWorldRecordsStore().clearRecords();
+          this.isLoadingNewWorld = false;
         } else {
-          // Add the new bookmark to the array
-          this.bookmarks.push(newBookmark);
+          // Handle case where both error and data are undefined
+          this.isLoadingNewWorld = false;
         }
-
-        useWorldRecordsStore().clearRecords();
-        this.isLoadingNewWorld = false;
-      } else {
-        // Handle case where both error and data are undefined
-        this.isLoadingNewWorld = false;
-      }
+      } catch (error) {
+        if (requestId !== currentRequestId) return;
+        this.bookmarks.forEach(b => b.state = 'Default');
+        this.bookmarkError = error instanceof Error ? error.message : 'World loading failed. Try again.';
+      } finally { if (requestId === currentRequestId) this.isLoadingNewWorld = false; }
     },
     async deleteByFullPath(filePath: string, latestTimestamp: string) {
       // Increment request ID for race condition handling
@@ -109,7 +116,7 @@ export const useBookmarkStore = defineStore('bookmark', {
         return; // Stale response, ignore it
       }
 
-      // Check for X-File-Missing header — the file was deleted or moved
+      // Check for X-File-Missing header - the file was deleted or moved
       const fileMissing = response?.headers.get('X-File-Missing') === 'true';
       if (fileMissing) {
         this.bookmarkWarning = 'The file was not found. It may have been deleted or moved.';
@@ -167,50 +174,57 @@ export const useBookmarkStore = defineStore('bookmark', {
         this.isLoadingNewWorld = true;
       }
 
-      const { data, error } = await client.POST("/api/Bookmark/loadByFolderAndFile", {
-        body: folderPath, // Send the filePath as raw text
-        params: {
-          query: {
-            fileName: fileName
+      try {
+        const { data, error } = await client.POST("/api/Bookmark/loadByFolderAndFile", {
+          body: folderPath, // Send the filePath as raw text
+          params: {
+            query: {
+              fileName: fileName
+            }
+          },
+        });
+
+        // Check if this response is still the latest request (race condition fix)
+        if (requestId !== currentRequestId) {
+          return; // Stale response, ignore it
+        }
+
+        if (error !== undefined) {
+          console.error(error);
+          // Reset bookmark state on error
+          let existingBookmark = this.bookmarks.find(bookmark => bookmark.filePath?.startsWith(folderPath) && bookmark.filePath?.endsWith(fileNameWithoutTimestamp));
+          if (existingBookmark) {
+            existingBookmark.state = 'Default';
           }
-        },
-      });
+          this.isLoadingNewWorld = false;
+          this.bookmarks.forEach(b => b.state = 'Default');
+          this.bookmarkError = typeof error === 'string' ? error : (error.detail ?? error.title ?? error.type ?? 'Failed to load world');
+        } else if (data) {
+          const newBookmark = data as Bookmark;
 
-      // Check if this response is still the latest request (race condition fix)
-      if (requestId !== currentRequestId) {
-        return; // Stale response, ignore it
-      }
+          // Check if the bookmark already exists (computed AFTER await)
+          const index = this.bookmarks.findIndex(bookmark => bookmark.filePath === newBookmark.filePath);
+          this.bookmarks.forEach(b => b.state = 'Default')
 
-      if (error !== undefined) {
-        console.error(error);
-        // Reset bookmark state on error
-        let existingBookmark = this.bookmarks.find(bookmark => bookmark.filePath?.startsWith(folderPath) && bookmark.filePath?.endsWith(fileNameWithoutTimestamp));
-        if (existingBookmark) {
-          existingBookmark.state = 'Default';
-        }
-        this.isLoadingNewWorld = false;
-        this.bookmarkError = error.title ?? error.type ?? 'Failed to load world';
-      } else if (data) {
-        const newBookmark = data as Bookmark;
+          if (index !== -1) {
+            // Update the existing bookmark
+            this.bookmarks[index] = newBookmark;
+          } else {
+            // Add the new bookmark to the array
+            this.bookmarks.push(newBookmark);
+          }
 
-        // Check if the bookmark already exists (computed AFTER await)
-        const index = this.bookmarks.findIndex(bookmark => bookmark.filePath === newBookmark.filePath);
-        this.bookmarks.forEach(b => b.state = 'Default')
-
-        if (index !== -1) {
-          // Update the existing bookmark
-          this.bookmarks[index] = newBookmark;
+          useWorldRecordsStore().clearRecords();
+          this.isLoadingNewWorld = false;
         } else {
-          // Add the new bookmark to the array
-          this.bookmarks.push(newBookmark);
+          // Handle case where both error and data are undefined
+          this.isLoadingNewWorld = false;
         }
-
-        useWorldRecordsStore().clearRecords();
-        this.isLoadingNewWorld = false;
-      } else {
-        // Handle case where both error and data are undefined
-        this.isLoadingNewWorld = false;
-      }
+      } catch (error) {
+        if (requestId !== currentRequestId) return;
+        this.bookmarks.forEach(b => b.state = 'Default');
+        this.bookmarkError = error instanceof Error ? error.message : 'World loading failed. Try again.';
+      } finally { if (requestId === currentRequestId) this.isLoadingNewWorld = false; }
     },
     async getAll() {
       const { data, error } = await client.GET("/api/Bookmark");

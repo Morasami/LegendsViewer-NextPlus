@@ -167,8 +167,11 @@ public class HistoryParser : IDisposable
                     if (leaders.Count == 1)
                     {
                         var leader = leaders[0];
-                        int reignBegan = Convert.ToInt32(_currentLine.Substring(_currentLine.IndexOf(":", StringComparison.Ordinal) + 2,
-                            _currentLine.IndexOf("), ", StringComparison.Ordinal) - _currentLine.IndexOf(":", StringComparison.Ordinal) - 2));
+                        // A living ruler's birth date can also end with "), ". Find the closing
+                        // delimiter after the reign field, rather than before its start.
+                        int reignStart = _currentLine.IndexOf(":", StringComparison.Ordinal) + 2;
+                        int reignBegan = Convert.ToInt32(_currentLine.Substring(reignStart,
+                            _currentLine.IndexOf("), ", reignStart, StringComparison.Ordinal) - reignStart));
                         if (_currentCiv.Leaders[_currentCiv.LeaderTypes.Count - 1].Count > 0) //End of previous leader's reign
                         {
                             HistoricalFigure? lastLeader = _currentCiv.Leaders[_currentCiv.LeaderTypes.Count - 1].LastOrDefault();

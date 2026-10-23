@@ -3,6 +3,11 @@ import { useRouter } from 'vue-router';
 import { useBookmarkStore } from './stores/bookmarkStore';
 import { useVersionStore } from './stores/versionStore';
 import { useFavoriteStore } from './stores/favoriteStore';
+import { ref } from 'vue';
+import { useDisplay } from 'vuetify';
+
+const drawer = ref<boolean | null>(null);
+const { mobile } = useDisplay();
 
 const router = useRouter();
 
@@ -77,21 +82,22 @@ const ritualItems = [
   <v-responsive class="border rounded" @click="handleGlobalClick">
     <v-app>
       <v-app-bar>
+        <v-app-bar-nav-icon v-if="mobile" aria-label="Toggle navigation" @click="drawer = !drawer" />
         <div class="logo">
           <v-img src="/ceretelina.png"></v-img>
         </div>
-        <h1>
+        <h1 class="app-title">
           Legends Viewer
         </h1>
         <div style="position: absolute; right: 30px;">
           <v-btn href="https://github.com/Kromtec/LegendsViewer-Next/releases" target="_blank" :aria-label="versionStore.version">
-            <p class="mr-2 mt-1">{{ versionStore.version }}</p>
+            <p class="mr-2 mt-1 d-none d-sm-block">{{ versionStore.version }}</p>
             <v-icon icon="mdi-github" size="24px"></v-icon>
           </v-btn>
         </div>
       </v-app-bar>
 
-      <v-navigation-drawer>
+      <v-navigation-drawer v-model="drawer">
         <v-list nav class="nav-list">
           <v-list-item prepend-icon="mdi-file-tree-outline" title="Explore Worlds" to="/"
             :active-class="'v-list-item--active'" />
@@ -219,5 +225,9 @@ const ritualItems = [
 .logo {
   margin: 12px;
   width: 36px;
+}
+@media (max-width: 600px) {
+  .app-title { font-size: 20px; }
+  .logo { margin: 8px; width: 28px; }
 }
 </style>

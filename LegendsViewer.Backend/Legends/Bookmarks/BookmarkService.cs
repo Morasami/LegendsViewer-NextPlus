@@ -61,7 +61,7 @@ public class BookmarkService : IBookmarkService
             ResetBookmark(bookmark);
 
             // Ensure Id is set from WorldName + WorldRegionName
-            bookmark.Id = $"{bookmark.WorldName}_{bookmark.WorldRegionName}";
+            bookmark.Id = ResolveBookmarkId(bookmark);
 
             string normalizedPath = Path.GetFullPath(bookmark.FilePath);
             _bookmarks[bookmark.Id] = bookmark;
@@ -85,7 +85,7 @@ public class BookmarkService : IBookmarkService
             ResetAllBookmarks();
 
             // Ensure Id is set from WorldName + WorldRegionName
-            bookmark.Id = $"{bookmark.WorldName}_{bookmark.WorldRegionName}";
+            bookmark.Id = ResolveBookmarkId(bookmark);
 
             if (_bookmarks.TryGetValue(bookmark.Id, out var existingBookmark))
             {
@@ -126,12 +126,30 @@ public class BookmarkService : IBookmarkService
     }
 
     // Caller holds SyncRoot for the entire mutation and save.
+    private string ResolveBookmarkId(Bookmark bookmark)
+    {
+        var baseId = $"{bookmark.WorldName}_{bookmark.WorldRegionName}";
+        var directory = Path.GetDirectoryName(Path.GetFullPath(bookmark.FilePath))!;
+        var key = WorldLibrary.ExportName.PathKey(directory);
+        var directoryId = baseId + ":" + WorldLibrary.ExportName.Id(key);
+        // Keep legacy IDs, adding a directory discriminator only when needed. Preserve it on restart.
+        if (bookmark.Id == directoryId || _bookmarks.ContainsKey(directoryId)) return directoryId;
+        return _bookmarks.TryGetValue(baseId, out var existing)
+            && WorldLibrary.ExportName.PathKey(Path.GetDirectoryName(Path.GetFullPath(existing.FilePath))!) != key
+            ? directoryId : baseId;
+    }
+
     private void ResetAllBookmarks()
     {
         foreach (var bookmark in _bookmarks.Values)
         {
             ResetBookmark(bookmark);
         }
+    }
+
+    public void MarkUnloaded()
+    {
+        lock (SyncRoot) ResetAllBookmarks();
     }
 
     public List<Bookmark> GetAll()

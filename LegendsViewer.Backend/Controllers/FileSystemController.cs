@@ -8,6 +8,23 @@ namespace LegendsViewer.Backend.Controllers;
 [Route("api/[controller]")]
 public class FileSystemController : ControllerBase
 {
+    [HttpGet("browse")]
+    [ProducesResponseType<FilesAndSubdirectoriesDto>(200)]
+    [ProducesResponseType<ProblemDetails>(400)]
+    public ActionResult<FilesAndSubdirectoriesDto> Browse([FromQuery] string? path = null)
+    {
+        try
+        {
+            if (path == "mounts") return Ok(GetMountsInformation());
+            path ??= Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            path = Settings.GameInstallationService.Normalize(path);
+            if (System.IO.File.Exists(path)) path = Path.GetDirectoryName(path)!;
+            return Ok(BrowseDirectory(path));
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
+        { return Problem("Cannot browse this export folder. Restore it or choose another folder: " + ex.Message, statusCode: 400); }
+    }
+
     [HttpGet]
     [ProducesResponseType<FilesAndSubdirectoriesDto>(StatusCodes.Status200OK)]
     public ActionResult<FilesAndSubdirectoriesDto> Get()
