@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 const routes = [
   { path: '/', name: 'Overview', component: () => import('../views/WorldOverview.vue') },
+  { path: '/search', name: 'Historical Search', component: () => import('../views/HistoricalSearch.vue') },
   { path: '/world', name: 'World', component: () => import('../views/World.vue') },
   { path: '/records', name: 'World Records', component: () => import('../views/WorldRecords.vue') },
   { path: '/map', name: 'Map', component: () => import('../views/Map.vue') },

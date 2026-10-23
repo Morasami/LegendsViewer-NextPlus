@@ -7,9 +7,15 @@ import { ref } from 'vue';
 import { useDisplay } from 'vuetify';
 
 const drawer = ref<boolean | null>(null);
-const { mobile } = useDisplay();
+const quickSearch = ref<string | null>('');
+const { mobile, mdAndUp } = useDisplay();
 
 const router = useRouter();
+
+const openSearch = () => {
+  const query = (quickSearch.value ?? '').trim();
+  router.push({ path: '/search', query: query ? { q: query } : {} });
+};
 
 const handleGlobalClick = (event: MouseEvent) => {
   const target = (event.target as HTMLElement)?.closest('a');
@@ -89,6 +95,27 @@ const ritualItems = [
         <h1 class="app-title">
           Legends Viewer
         </h1>
+        <v-text-field
+          v-if="mdAndUp && bookmarkStore.isLoaded"
+          v-model="quickSearch"
+          class="app-search"
+          density="compact"
+          variant="solo-filled"
+          hide-details
+          flat
+          clearable
+          prepend-inner-icon="mdi-magnify"
+          placeholder="Search this world's history"
+          aria-label="Search this world's history"
+          @keyup.enter="openSearch"
+        />
+        <v-btn
+          v-if="!mdAndUp && bookmarkStore.isLoaded"
+          icon="mdi-magnify"
+          aria-label="Search this world's history"
+          class="ml-2"
+          @click="openSearch"
+        />
         <div style="position: absolute; right: 30px;">
           <v-btn href="https://github.com/Kromtec/LegendsViewer-Next/releases" target="_blank" :aria-label="versionStore.version">
             <p class="mr-2 mt-1 d-none d-sm-block">{{ versionStore.version }}</p>
@@ -122,6 +149,8 @@ const ritualItems = [
           </v-list-group>
 
           <v-list-item prepend-icon="mdi-earth-box" title="Overview" to="/world" :active-class="'v-list-item--active'"
+            :disabled="bookmarkStore?.isLoaded == false" />
+          <v-list-item prepend-icon="mdi-magnify" title="Historical Search" to="/search" :active-class="'v-list-item--active'"
             :disabled="bookmarkStore?.isLoaded == false" />
           <v-list-item prepend-icon="mdi-trophy-outline" title="World Records" to="/records" :active-class="'v-list-item--active'"
             :disabled="bookmarkStore?.isLoaded == false" />
@@ -226,8 +255,18 @@ const ritualItems = [
   margin: 12px;
   width: 36px;
 }
+.app-search {
+  max-width: 380px;
+  margin-left: 20px;
+}
+.app-search :deep(.v-field) {
+  background: rgba(255, 255, 255, 0.08);
+}
 @media (max-width: 600px) {
   .app-title { font-size: 20px; }
   .logo { margin: 8px; width: 28px; }
+}
+@media (max-width: 959px) {
+  .app-search { display: none; }
 }
 </style>

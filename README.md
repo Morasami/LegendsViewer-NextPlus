@@ -4,7 +4,7 @@
 
 LegendsViewer-NextPlus is a community fork of [Kromtec's LegendsViewer-Next](https://github.com/Kromtec/LegendsViewer-Next), itself a modern successor to the original LegendsViewer. It turns *Dwarf Fortress* Legends exports into a browsable historical archive: explore people, civilizations, settlements, creatures, artifacts, wars, timelines, populations, and the world map.
 
-NextPlus builds on the original **.NET 10 backend** and **Vue 3 / TypeScript frontend**, adding automatic game and export discovery, Premium-style world maps from your installed game graphics, an organized World Library, and persistent parsed-world caching.
+NextPlus builds on the original **.NET 10 backend** and **Vue 3 / TypeScript frontend**, adding automatic game and export discovery, Premium-style world maps from your installed game graphics, an organized World Library, universal offline historical search, and persistent parsed-world caching.
 
 > **Status:** Actively developed. The features under **Available today** are implemented; those under **Planned** are roadmap ideas, not features in the current build. This is an independent community project, not an official Dwarf Fortress or DFHack release.
 
@@ -18,6 +18,7 @@ NextPlus builds on the original **.NET 10 backend** and **Vue 3 / TypeScript fro
 | **Premium world maps** | Uses DFHack's `world_map.csv` export with graphics from your locally installed Dwarf Fortress; falls back to legacy BMP or generated maps when needed. |
 | **Map exploration** | Interactive Leaflet map with sites, map navigation, civilization layers, and wars/battles overlays. |
 | **Historical browsing** | Existing figures and family trees, civilizations, sites, artifacts, events, eras, world records, and other original LegendsViewer-Next views. |
+| **Universal historical search** | Fast, offline, cross-category search over the loaded world: figures, civilizations, sites, places, artifacts, wars, battles, chronicles, individual events and creature definitions. Results rank exact and prefix names first, support category/year filters and pagination, and link to existing detail pages. |
 | **Population and warfare data** | Population charts and expanded battle/combatant information drawn from available exports. |
 | **Persistent parsed-world cache** | Saves the resolved backend historical graph per snapshot, preserving event types and relationships; checks source fingerprints and rebuilds invalid or outdated entries. |
 | **Cache controls** | Inspect cache readiness, rebuild or remove an individual cache, and open an intact cache with an offline warning if its source export is unavailable. |
@@ -27,7 +28,7 @@ NextPlus builds on the original **.NET 10 backend** and **Vue 3 / TypeScript fro
 
 The first load of a world parses its exports and writes a cache, so **initial imports can take longer**. Subsequent loads restore processed history without re-running the XML parser, while validating source data and initializing the map.
 
-In local **.NET 10 Debug** tests, full warm loads (including verification and map setup) were about **47% faster** than parsing plus map setup for two tested worlds: approximately 14 seconds vs. 27 seconds for region2, and 22 seconds vs. 42 seconds for region3. Results depend on your exports, hardware, and filesystem; loading is not instantaneous.
+In local **.NET 10 Debug** tests, full warm loads (including verification and map setup) were about **47% faster** than parsing plus map setup for two tested worlds: approximately 14 seconds vs. 27 seconds for region2, and 22 seconds vs. 42 seconds for region3. Universal historical search adds a one-time in-memory index build per loaded world generation; in the same local environment that was about 4.5 seconds for each of those worlds and roughly 110–136 MiB of retained managed memory. Results depend on your exports, hardware, and filesystem; loading is not instantaneous.
 
 ## Getting started
 
@@ -65,7 +66,8 @@ Use the URL printed by the frontend development server.
 2. Review the **World Library**. The application searches the game folder and configured export directories. You can add another export folder and select **Rescan exports**.
 3. Expand a world, inspect its companion-file status, and choose **Load snapshot**. You can still import an individual XML manually.
 4. Explore the world, including historical pages, charts, the interactive map, and warfare overlays.
-5. On later launches, select the snapshot again to load the verified cached historical model. Use **Rebuild Cache** or **Remove Cache** if needed.
+5. Use **Historical Search** (or the app-bar search field) to search across figures, civilizations, sites, places, artifacts, wars, battles, chronicles and events. Combine category and year filters, then open a result to its existing detail page.
+6. On later launches, select the snapshot again to load the verified cached historical model. Use **Rebuild Cache** or **Remove Cache** if needed.
 
 The World Library remembers discovery metadata; the parsed-world cache is a separate, versioned snapshot store.
 
@@ -107,7 +109,7 @@ The application does not modify the original Dwarf Fortress installation, saves,
 
 Development goals include:
 
-- **Universal historical search** spanning figures, civilizations, sites, artifacts, events, and relationships.
+- **Search relationships and broader retrieval** on top of the universal search index, including evidence-grounded connections between records.
 - **Interesting Histories** discovery to surface notable recorded world events and connected stories.
 - An **interactive relationship explorer** and richer historical figure, settlement, civilization, artifact, and forgotten-beast profiles.
 - **Historical journeys** for following recorded people and artifacts across locations and time.
@@ -126,6 +128,7 @@ Useful project records:
 
 - [Milestone 2B — World Library](docs/milestone-2b-world-library.md)
 - [Milestone 3 — Persistent cache architecture and benchmarks](docs/milestone-3-world-cache.md)
+- [Milestone 4A — Universal historical search](docs/milestone-4a-universal-historical-search.md)
 
 Typical checks:
 
