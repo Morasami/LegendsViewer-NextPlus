@@ -436,7 +436,7 @@ public sealed class HistoricalSearchIndex
             return response;
         }
 
-        HashSet<int> candidates = FindCandidates(normalizedQuery, queryTokens, categories, out _);
+        HashSet<int> candidates = FindCandidates(normalizedQuery, queryTokens, categories, out bool candidatesTruncated);
         List<ScoredDocument> matched = new(candidates.Count);
         foreach (int ordinal in candidates)
         {
@@ -460,10 +460,10 @@ public sealed class HistoricalSearchIndex
         matched.Sort(CompareScoredDocuments);
         response.TotalCount = matched.Count;
         response.TotalPages = matched.Count == 0 ? 0 : (int)Math.Ceiling(matched.Count / (double)pageSize);
-        // Candidate scanning may be capped by broad event-text postings while a category filter
-        // still has far fewer than the cap. Only warn when the returned matches themselves reach
-        // the bound, which is the case where additional matching records could be omitted.
-        response.Truncated = matched.Count >= MaximumCandidates;
+        // Candidate postings or prefix expansion can hit their bounds before category/year
+        // filtering. Even a small or empty final page might be missing valid records.
+        // Propagate the scan limit instead of claiming a complete result set.
+        response.Truncated = candidatesTruncated || matched.Count >= MaximumCandidates;
         if (response.Truncated)
         {
             response.Warning = "The result set is very large. Refine the search to narrow it down.";

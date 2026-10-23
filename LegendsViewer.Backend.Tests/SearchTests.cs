@@ -232,6 +232,34 @@ public class SearchTests
     }
 
     [TestMethod]
+    public async Task CappedCandidateScanReportsTruncationAfterYearFiltering()
+    {
+        var world = await ParseWorldAsync(extended: false);
+        world.Events.Clear();
+
+        // The first ten matches pass the year filter. The last ten do too, but
+        // are beyond the 25,000-candidate posting cap and will be omitted.
+        // Truncation must be reported even if the filtered total is only ten.
+        for (int eventIndex = 0; eventIndex < HistoricalSearchIndex.MaximumCandidates + 10; eventIndex++)
+        {
+            int year = eventIndex < 10 || eventIndex >= HistoricalSearchIndex.MaximumCandidates ? 2 : 1;
+            world.Events.Add(new WorldEvent([
+                new Property { Name = "id", Value = (300_000 + eventIndex).ToString() },
+                new Property { Name = "year", Value = year.ToString() },
+                new Property { Name = "type", Value = "hf died" }
+            ], world));
+        }
+
+        var index = HistoricalSearchIndex.Build(world);
+        var response = Search(index, "historical figure death", [HistoricalSearchCategory.Event], 2, 2);
+
+        Assert.IsTrue(response.TotalCount > 0 && response.TotalCount < HistoricalSearchIndex.MaximumCandidates,
+            "This test must exercise a partially filtered result set below the candidate cap.");
+        Assert.IsTrue(response.Truncated, "A capped candidate scan must not report complete results.");
+        Assert.IsFalse(string.IsNullOrWhiteSpace(response.Warning), "Warn users that matches may be missing.");
+        Assert.IsTrue(response.Items.All(item => item.Year == 2));
+    }
+    [TestMethod]
     public void EmptyAndMalformedQueriesNeverThrowAndReturnNoFalseMatches()
     {
         var world = new World();
