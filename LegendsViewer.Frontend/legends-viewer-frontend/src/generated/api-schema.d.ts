@@ -15436,6 +15436,98 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/Search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    q?: string;
+                    categories?: string;
+                    fromYear?: number;
+                    toYear?: number;
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["HistoricalSearchResponse"];
+                        "application/json": components["schemas"]["HistoricalSearchResponse"];
+                        "text/json": components["schemas"]["HistoricalSearchResponse"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ProblemDetails"];
+                        "application/json": components["schemas"]["ProblemDetails"];
+                        "text/json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/Search/metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["HistoricalSearchMetadataDto"];
+                        "application/json": components["schemas"]["HistoricalSearchMetadataDto"];
+                        "text/json": components["schemas"]["HistoricalSearchMetadataDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/Site": {
         parameters: {
             query?: never;
@@ -21337,6 +21429,78 @@ export interface components {
             adventurer?: boolean;
             breedId?: string | null;
             readonly isMainCivLeader?: boolean;
+        };
+        /** @enum {string} */
+        HistoricalSearchCategory: "Figure" | "Entity" | "Site" | "Place" | "Artifact" | "War" | "Battle" | "EventCollection" | "Event" | "Creature";
+        HistoricalSearchMetadataDto: {
+            worldLoaded?: boolean;
+            /** Format: int64 */
+            generation?: number;
+            worldName?: string | null;
+            worldAlternativeName?: string | null;
+            /** Format: int32 */
+            currentYear?: number | null;
+            /** Format: int32 */
+            indexBuildMilliseconds?: number;
+            /** Format: int32 */
+            indexedRecordCount?: number;
+            /** Format: int64 */
+            estimatedIndexBytes?: number;
+            categoryCounts?: {
+                [key: string]: number;
+            } | null;
+            unavailableCategories?: string[] | null;
+        };
+        HistoricalSearchResponse: {
+            query?: string | null;
+            worldLoaded?: boolean;
+            /** Format: int64 */
+            generation?: number;
+            worldName?: string | null;
+            worldAlternativeName?: string | null;
+            /** Format: int32 */
+            currentYear?: number | null;
+            /** Format: int32 */
+            page?: number;
+            /** Format: int32 */
+            pageSize?: number;
+            /** Format: int32 */
+            totalCount?: number;
+            /** Format: int32 */
+            totalPages?: number;
+            truncated?: boolean;
+            /** Format: int32 */
+            indexBuildMilliseconds?: number;
+            /** Format: int32 */
+            indexedRecordCount?: number;
+            items?: components["schemas"]["HistoricalSearchResultDto"][] | null;
+            availableCategoryCounts?: {
+                [key: string]: number;
+            } | null;
+            matchedCategoryCounts?: {
+                [key: string]: number;
+            } | null;
+            unavailableCategories?: string[] | null;
+            message?: string | null;
+            warning?: string | null;
+        };
+        HistoricalSearchResultDto: {
+            key?: string | null;
+            category?: components["schemas"]["HistoricalSearchCategory"];
+            categoryLabel?: string | null;
+            /** Format: int32 */
+            id?: number | null;
+            name?: string | null;
+            type?: string | null;
+            description?: string | null;
+            /** Format: int32 */
+            year?: number | null;
+            dateLabel?: string | null;
+            url?: string | null;
+            navigable?: boolean;
+            matchKind?: string | null;
+            /** Format: int32 */
+            rank?: number;
         };
         Honor: {
             readonly entityToLink?: string | null;

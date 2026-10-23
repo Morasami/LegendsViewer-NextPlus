@@ -2,7 +2,7 @@
 
 **A persistent, visual history browser for [Dwarf Fortress](https://www.bay12games.com/dwarves/).**
 
-NextPlus is a community fork of [LegendsViewer-Next](https://github.com/Kromtec/LegendsViewer-Next). It makes Dwarf Fortress Legends exports easier to discover and explore, combining historical records, interactive Premium-style maps, and a library of cached worlds.
+NextPlus is a community fork of [LegendsViewer-Next](https://github.com/Kromtec/LegendsViewer-Next). It makes Dwarf Fortress Legends exports easier to discover and explore, combining historical records, interactive Premium-style maps, universal offline search, and a library of cached worlds.
 
 > **Status:** Actively developed. Features listed below are implemented; [planned features](#roadmap) are not yet available. NextPlus is an independent community project, not an official Dwarf Fortress or DFHack application.
 
@@ -12,12 +12,15 @@ NextPlus is a community fork of [LegendsViewer-Next](https://github.com/Kromtec/
 - **Installation detection:** Finds Steam installations (including custom libraries), with a manual folder picker and saved export directories.
 - **Premium maps:** Interactive Leaflet maps with terrain and site sprites sourced from your locally installed Dwarf Fortress, plus civilization and warfare overlays. BMP and generated-map fallbacks remain available.
 - **Historical exploration:** Browse figures, family trees, civilizations, sites, artifacts, wars, battles, eras, world records, and populations.
+- **Universal historical search:** Search the loaded world across figures, civilizations, sites, places, artifacts, wars, battles, chronicles, individual events, and creature definitions. Exact and prefix names rank first; category and year filters, pagination, and links to existing detail pages are included. Search is fully offline and does not require an AI model or API key.
 - **Persistent caching:** Reopens verified historical data without reparsing the XML. Supports cache rebuild/removal and warned offline opening when the source export is unavailable.
 - **Export diagnostics and bookmarks:** Shows missing companion files and remembers previously opened worlds.
 
 ### Loading performance
 
 The first import parses history and creates a cache, so it can take longer. In local .NET 10 Debug benchmarks with two worlds, subsequent full loads were approximately **47% faster** than parsing and map setup (about 14 vs. 27 seconds for region2; 22 vs. 42 seconds for region3). Performance depends on world size and hardware.
+
+Universal historical search adds a one-time in-memory index build per loaded world generation. In the local benchmark environment this was about **4.5 seconds** for each tested large world, with roughly **110–136 MiB** of retained managed memory. Searches then use the index and do not invoke the XML parser.
 
 ## Getting started
 
@@ -40,6 +43,7 @@ Open **http://localhost:15422** if the local frontend does not open automaticall
 2. Open **Explore Worlds → Dwarf Fortress Settings** to confirm or choose the game folder.
 3. Let the World Library discover exports, or add an export directory and rescan.
 4. Select a snapshot to load; later openings can use its verified cache.
+5. Use **Historical Search** (or the app-bar search field) to search across the loaded world, filter by category or year, and open a result to its existing detail page.
 
 The main `<region>-<date>-legends.xml` is required for a first import. Matching optional companion files extend available information:
 
@@ -65,7 +69,7 @@ Discovery and loading do not modify original game files, saves, or exports.
 
 Planned, **not implemented yet**:
 
-- Universal historical search and automatic discovery of interesting stories.
+- Automatic discovery of interesting stories and broader relationship-oriented retrieval on top of the universal search index.
 - Relationship graphs, deeper biographies and bestiary pages, artifact journeys, and research notes.
 - Snapshot comparisons and exploration of additional save-derived data and authentic individual sprites.
 - Optional evidence-grounded **AI Historian** for chronicles and historical studies.
@@ -82,7 +86,7 @@ npm run test:run
 npm run build
 ```
 
-See the [World Library](docs/milestone-2b-world-library.md) and [cache architecture](docs/milestone-3-world-cache.md) reports. Contributions are welcome: open an issue or submit a focused PR to `main`. Please do not commit game assets, world exports, saves, or local caches.
+See the [World Library](docs/milestone-2b-world-library.md), [cache architecture](docs/milestone-3-world-cache.md), and [universal historical search](docs/milestone-4a-universal-historical-search.md) reports. Contributions are welcome: open an issue or submit a focused PR to `main`. Please do not commit game assets, world exports, saves, local caches, or generated browser-test artifacts.
 
 ## Credits and license
 
