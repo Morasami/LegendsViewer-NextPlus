@@ -30,7 +30,7 @@ export const useBookmarkStore = defineStore('bookmark', {
     },
   },
   actions: {
-    async loadByFullPath(filePath: string, latestTimestamp: string) {
+    async loadByFullPath(filePath: string, latestTimestamp: string, rebuildCache = false) {
       // Increment request ID for race condition handling
       const requestId = ++currentRequestId;
 
@@ -44,8 +44,9 @@ export const useBookmarkStore = defineStore('bookmark', {
       }
 
       try {
-        const { data, error } = await client.POST("/api/Bookmark/loadByFullPath", {
+        const { data, error, response } = await client.POST("/api/Bookmark/loadByFullPath", {
           body: filePath.replace("{TIMESTAMP}", latestTimestamp), // Send the filePath as raw text
+          ...(rebuildCache ? { params: { query: { rebuildCache: true } } } : {}),
         });
 
         // Check if this response is still the latest request (race condition fix)
@@ -63,6 +64,7 @@ export const useBookmarkStore = defineStore('bookmark', {
           this.bookmarks.forEach(b => b.state = 'Default');
           this.bookmarkError = typeof error === 'string' ? error : (error.detail ?? error.title ?? error.type ?? '');
         } else if (data) {
+          this.bookmarkWarning = decodeURIComponent(response?.headers.get('X-NextPlus-Warning') ?? '');
           const newBookmark = data as Bookmark;
           if (newBookmark.worldName == null || newBookmark.worldName.length == 0) {
             this.bookmarkWarning = 'The legends_plus.xml file was not found. Dwarf Fortress currently exports only a limited amount of legends data. To access more detailed information, including proper maps and other important features, please install DFHack, which will automatically export the additional data.'

@@ -2,10 +2,14 @@
 // set NEXTPLUS_PLAYWRIGHT_MODULE to an existing Playwright module when it is not on NODE_PATH.
 // Screenshots/report go to NEXTPLUS_BROWSER_OUTPUT (default: ignored artifacts/browser-2b).
 // Optional NEXTPLUS_TEST_EXPORT_DIRECTORY exercises adding/removing an empty fixture folder.
+// NEXTPLUS_M3=1 adds persistent-cache checks and restarts the backend identified by
+// NEXTPLUS_BACKEND_PID_FILE using NEXTPLUS_BACKEND_DLL. Keeps all Milestone 2B checks.
 const { chromium } = require(process.env.NEXTPLUS_PLAYWRIGHT_MODULE || 'playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { spawn } = require('node:child_process');
+const fsSync = require('node:fs');
 
 (async () => {
   const output = path.resolve(process.env.NEXTPLUS_BROWSER_OUTPUT || 'artifacts/browser-2b');
@@ -15,10 +19,40 @@ const path = require('node:path');
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   page.setDefaultTimeout(30000);
   const report = { consoleErrors: [], pageErrors: [], failedRequests: [], httpErrors: [], checks: [], screenshots: [] };
+  const m3 = process.env.NEXTPLUS_M3 === '1';
+  report.cacheLoads = []; report.cachePhases = [];
   page.on('console', message => { if (message.type() === 'error') report.consoleErrors.push(message.text()); });
   page.on('pageerror', error => report.pageErrors.push(error.message));
   page.on('requestfailed', request => report.failedRequests.push({ url: request.url(), error: request.failure()?.errorText }));
   page.on('response', response => { if (response.status() >= 400) report.httpErrors.push({ url: response.url(), status: response.status() }); });
+  page.on('response', async response => {
+    if (m3 && response.url().endsWith('/api/world-library')) {
+      try { const data = await response.json(); for (const s of data.snapshots ?? []) if (s.cache && !report.cachePhases.includes(s.cache.state)) report.cachePhases.push(s.cache.state); } catch {}
+    }
+  });
+  const loadResponse = () => page.waitForResponse(r => new URL(r.url()).pathname.endsWith('/api/Bookmark/loadByFullPath'), { timeout: 240000 });
+  const cacheLoad = async (response, expected) => {
+    assert.equal(response.status(), 200); const headers = await response.allHeaders();
+    report.cacheLoads.push({ cache: headers['x-nextplus-cache'], fullLoadMs: headers['x-nextplus-load-ms'] });
+    assert.equal(headers['x-nextplus-cache'], expected);
+  };
+  const restartBackend = async () => {
+    const pidFile = process.env.NEXTPLUS_BACKEND_PID_FILE;
+    const dll = process.env.NEXTPLUS_BACKEND_DLL;
+    assert(pidFile && dll, 'M3 requires an explicitly identified test backend');
+    const previousPid = Number((await fs.readFile(pidFile, 'utf8')).trim());
+    process.kill(previousPid);
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    const log = fsSync.openSync(path.join(output, 'backend-restarted.log'), 'a');
+    const backend = spawn('dotnet', [dll], { cwd: process.cwd(), windowsHide: true, env: { ...process.env, ASPNETCORE_ENVIRONMENT: 'Development' }, stdio: ['ignore', log, log] });
+    backend.unref(); fsSync.closeSync(log);
+    await fs.writeFile(pidFile, String(backend.pid));
+    for (let i = 0; i < 60; i++) {
+      try { if ((await fetch('http://localhost:15421/api/Bookmark')).ok) { report.backendRestart = { previousPid, newPid: backend.pid }; return; } } catch {}
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    throw new Error('Backend did not restart');
+  };
   const check = message => { report.checks.push(message); console.log('PASS', message); };
   const shot = async name => {
     // Let Vuetify transitions and chart animations settle before visual inspection.
@@ -86,9 +120,14 @@ const path = require('node:path');
     region = page.locator('.v-expansion-panel').filter({ hasText: 'region2' });
     if (await region.getByRole('button', { name: /^(Load|Reload) snapshot$/ }).count() === 0)
       await region.locator('.v-expansion-panel-title').click();
+    if (m3 && await region.getByRole('button', { name: 'Remove cache', exact: true }).count()) {
+      const removed = page.waitForResponse(r => r.url().endsWith('/cache') && r.request().method() === 'DELETE');
+      await region.getByRole('button', { name: 'Remove cache', exact: true }).click(); assert.equal((await removed).status(), 200);
+    }
     const load = page.waitForResponse(r => r.url().endsWith('/api/Bookmark/loadByFullPath'), { timeout: 180000 });
     await region.getByRole('button', { name: /^(Load|Reload) snapshot$/ }).click();
-    assert.equal((await load).status(), 200);
+    if (m3) { await page.waitForTimeout(2000); await shot('m3-01-import-progress'); await cacheLoad(await load, 'MISS'); }
+    else assert.equal((await load).status(), 200);
     await region.getByRole('button', { name: 'Reload snapshot', exact: true }).waitFor({ timeout: 60000 });
     await shot('05-loaded-library'); check('region2 loads through the existing parser and bookmark path');
     await page.getByRole('link', { name: 'Overview', exact: true }).click();
@@ -110,6 +149,27 @@ const path = require('node:path');
     await page.mouse.move(500, 400);
     await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
     await shot('07-premium-map'); check('Premium map, site icons, zoom and Wars & Battles layer controls work');
+    if (m3) {
+      await page.waitForLoadState('networkidle'); await restartBackend();
+      const refreshed = refreshResponse(); await page.goto('http://localhost:15422'); assert.equal((await refreshed).status(), 200);
+      region = page.locator('.v-expansion-panel').filter({ hasText: 'region2' }); await region.locator('.v-expansion-panel-title').click();
+      assert.match(await region.innerText(), /Cached and ready/);
+      const warm = loadResponse(); await region.getByRole('button', { name: /^(Load|Reload) snapshot$/ }).click();
+      await page.waitForTimeout(2500); await shot('m3-02-restore-progress'); await cacheLoad(await warm, 'HIT');
+      await region.getByRole('button', { name: 'Reload snapshot', exact: true }).waitFor({ timeout: 60000 });
+      check('Complete backend restart restores region2 from persistent cache without XML parsing');
+      for (const [route, label] of [['world','Overview'],['map','Map'],['hf','Characters'],['entity','Civilizations'],['artifact','Artifacts'],['war','Wars'],['battle','Battles'],['records','World Records']]) {
+        await page.goto(`http://localhost:15422/${route}`); await page.waitForLoadState('networkidle');
+        assert((await page.locator('main').innerText()).trim().length > 80, `Expected usable ${label} page`);
+        if (route === 'map') await page.locator('#map .leaflet-image-layer').waitFor();
+        await shot(`m3-restored-${route}`);
+        const detail = page.locator(`main a[href^="/${route}/"]`).first();
+        if (['hf','entity','artifact','war','battle'].includes(route) && await detail.count()) {
+          await detail.click(); await page.waitForLoadState('networkidle'); await shot(`m3-detail-${route}`);
+        }
+        check(`${label} works after cache restoration`);
+      }
+    }
     await libraryPage();
     const second = page.locator('.v-expansion-panel').filter({ hasText: 'region3' });
     if (await second.count() === 1) {
@@ -126,6 +186,28 @@ const path = require('node:path');
       assert.equal((await back).status(), 200);
       await region.getByRole('button', { name: 'Reload snapshot', exact: true }).waitFor({ timeout: 60000 });
       check('Switching back to region2 preserves its bookmark and selected snapshot');
+    }
+    if (m3) {
+      const state = await (await fetch('http://localhost:15421/api/world-library')).json();
+      const selected = state.snapshots.find(s => s.region === 'region2');
+      assert(selected && /^[a-f0-9]{64}$/.test(selected.id));
+      const cachePath = path.join(process.env.APPDATA, 'LegendsViewer-NextPlus', 'cache', `${selected.id}.lvwc`);
+      await fs.writeFile(cachePath, Buffer.from('incomplete test cache'));
+      const refreshed = refreshResponse(); await page.getByRole('button', { name: 'Rescan exports', exact: true }).click(); assert.equal((await refreshed).status(), 200);
+      assert.match(await region.innerText(), /Cache invalid or unavailable/); await shot('m3-03-invalid-cache');
+      const rebuild = loadResponse(); await region.getByRole('button', { name: 'Rebuild Cache', exact: true }).click();
+      await page.waitForTimeout(2000); await shot('m3-03-rebuild-progress'); await cacheLoad(await rebuild, 'MISS');
+      await region.getByRole('button', { name: 'Reload snapshot', exact: true }).waitFor({ timeout: 60000 });
+      await region.getByText('Cached and ready', { exact: true }).waitFor();
+      assert.match(await region.innerText(), /Cached and ready/); await shot('m3-04-cache-ready');
+      const removed = page.waitForResponse(r => r.url().endsWith('/cache') && r.request().method() === 'DELETE');
+      await region.getByRole('button', { name: 'Remove cache', exact: true }).click(); assert.equal((await removed).status(), 200);
+      await region.getByText('Cache unavailable', { exact: true }).waitFor();
+      assert.match(await region.innerText(), /Cache unavailable/);
+      assert(await region.getByRole('button', { name: 'Reload snapshot', exact: true }).count(), 'Deleting cache must preserve the active bookmark');
+      const recreate = loadResponse(); await region.getByRole('button', { name: 'Reload snapshot', exact: true }).click(); await cacheLoad(await recreate, 'MISS');
+      await region.getByRole('button', { name: 'Reload snapshot', exact: true }).waitFor({ timeout: 60000 });
+      check('Selected cache rebuild and removal work, preserving bookmarks and the active world');
     }
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(500);

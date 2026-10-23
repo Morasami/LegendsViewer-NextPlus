@@ -6,6 +6,9 @@ const library = useWorldLibraryStore()
 const bookmarks = useBookmarkStore()
 const settingsOpen = ref(false)
 const path = ref('')
+const cacheLabels: Record<string, string> = { NeverImported: 'Never imported', Unavailable: 'Cache unavailable', Ready: 'Cached and ready', Offline: 'Cached · source unavailable',
+  SourceChanged: 'Source changed · update required', Invalid: 'Cache invalid or unavailable', Verifying: 'Verifying cache', Restoring: 'Loading from cache',
+  Validating: 'Validating world', Parsing: 'Parsing / rebuilding', Writing: 'Saving cache', Map: 'Initializing map' }
 const labels: Record<string, string> = { main: 'Main legends XML', extended: 'Extended legends XML', history: 'History text',
   populations: 'Sites / populations text', csv: 'Premium map CSV', bmp: 'Legacy map BMP' }
 const consequences: Record<string, string> = { main: 'Required to load this snapshot.', extended: 'Optional; adds detailed historical information.',
@@ -27,7 +30,7 @@ async function add() {
       <v-btn prepend-icon="mdi-refresh" :loading="library.busy" :disabled="bookmarks.isLoading" @click="library.refresh">Rescan exports</v-btn>
     </div>
     <v-alert v-if="library.error" type="error" variant="tonal" class="mb-3" role="alert">{{ library.error }}</v-alert>
-    <v-alert v-if="library.message" type="success" variant="tonal" class="mb-3">{{ library.message }} <router-link to="/world">Explore world</router-link></v-alert>
+    <v-alert v-if="library.message" type="success" variant="tonal" class="mb-3">{{ library.message }} <router-link v-if="bookmarks.isLoaded" to="/world">Explore world</router-link></v-alert>
     <v-alert v-if="library.library?.warning" type="warning" variant="tonal" class="mb-3">{{ library.library.warning }}</v-alert>
     <v-alert v-for="root in library.library?.roots?.filter(r => r.warning)" :key="root.path ?? ''" type="warning" variant="tonal" class="mb-3">
       <span class="library-path">{{ root.path }}</span> — {{ root.warning }}
@@ -60,9 +63,14 @@ async function add() {
                 <div class="mr-auto library-summary"><strong>{{ snapshot.date || 'Undated export' }}</strong><div class="library-path text-caption">{{ snapshot.prefix }}</div></div>
                 <v-chip v-if="library.isLoaded(snapshot)" color="success" size="small">Loaded</v-chip>
                 <v-chip v-if="snapshot.status === 'Failed'" color="warning" size="small">Last load failed</v-chip>
-                <v-btn :disabled="!snapshot.available || bookmarks.isLoading || !!library.loadingId" :loading="library.loadingId === snapshot.id" color="primary" variant="tonal" @click="library.load(snapshot)">{{ library.isLoaded(snapshot) ? 'Reload snapshot' : 'Load snapshot' }}</v-btn>
+                <v-chip v-if="snapshot.cache" size="small" :color="snapshot.cache.state === 'Ready' ? 'success' : ['Invalid', 'SourceChanged', 'Offline'].includes(snapshot.cache.state ?? '') ? 'warning' : undefined">{{ cacheLabels[snapshot.cache.state ?? ''] || snapshot.cache.state }}</v-chip>
+                <v-btn :disabled="(!snapshot.available && snapshot.cache?.state !== 'Offline') || bookmarks.isLoading || !!library.loadingId" :loading="library.loadingId === snapshot.id" color="primary" variant="tonal" @click="library.load(snapshot)">{{ library.isLoaded(snapshot) ? 'Reload snapshot' : 'Load snapshot' }}</v-btn>
                 <v-btn v-if="library.isLoaded(snapshot)" to="/world" variant="tonal" color="success">Explore</v-btn>
+                <v-btn size="small" variant="text" :disabled="!snapshot.available || bookmarks.isLoading || !!library.loadingId || library.busy" @click="library.load(snapshot, true)">Rebuild Cache</v-btn>
+                <v-btn v-if="snapshot.cache && !['NeverImported', 'Unavailable'].includes(snapshot.cache.state ?? '')" size="small" variant="text" :disabled="bookmarks.isLoading || !!library.loadingId || library.busy" @click="library.removeCache(snapshot)">Remove cache</v-btn>
               </div>
+              <div v-if="snapshot.cache" class="text-caption text-medium-emphasis mt-2" role="status">{{ snapshot.cache.message }}<span v-if="snapshot.cache.bytes"> · {{ (snapshot.cache.bytes / 1048576).toFixed(1) }} MiB</span></div>
+              <v-progress-linear v-if="library.loadingId === snapshot.id" indeterminate class="mt-2" :aria-label="cacheLabels[snapshot.cache?.state ?? ''] || 'Loading world'" />
               <v-alert v-if="snapshot.warning" type="warning" variant="tonal" class="mt-3">{{ snapshot.warning }}</v-alert>
               <details class="mt-3 companion-details">
                 <summary>Companion files · {{ snapshot.files?.filter(f => f.status === 'Available').length ?? 0 }}/6 available</summary>

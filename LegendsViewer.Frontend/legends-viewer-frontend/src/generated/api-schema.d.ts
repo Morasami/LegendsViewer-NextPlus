@@ -2315,7 +2315,9 @@ export interface paths {
         put?: never;
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    rebuildCache?: boolean;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -19131,6 +19133,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/world-library/{snapshotId}/cache": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    snapshotId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["LibraryState"];
+                        "application/json": components["schemas"]["LibraryState"];
+                        "text/json": components["schemas"]["LibraryState"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/world-library": {
         parameters: {
             query?: never;
@@ -20775,6 +20816,14 @@ export interface components {
         };
         /** @enum {string} */
         BookmarkState: "Default" | "Loading" | "Loaded";
+        CacheInfo: {
+            state?: string | null;
+            message?: string | null;
+            /** Format: int64 */
+            bytes?: number | null;
+            /** Format: date-time */
+            createdUtc?: string | null;
+        };
         CeremonyCollection: {
             /** Format: int32 */
             id?: number;
@@ -21407,6 +21456,7 @@ export interface components {
             predecessorRelation?: string | null;
         };
         LibrarySnapshot: {
+            cache?: components["schemas"]["CacheInfo"];
             id?: string | null;
             worldId?: string | null;
             directory?: string | null;

@@ -56,22 +56,39 @@ export const useWorldLibraryStore = defineStore('worldLibrary', {
         this.directory = data
       })
     },
-    async load(snapshot: Snapshot) {
+    async removeCache(snapshot: Snapshot) {
+      await this.run(async () => {
+        const { data, error } = await client.DELETE('/api/world-library/{snapshotId}/cache', {
+          headers, params: { path: { snapshotId: snapshot.id ?? '' } },
+        })
+        if (error || !data) throw new Error('Could not remove this cache. Wait for any load to finish and try again.')
+        this.library = data; this.message = 'Parsed-world cache removed. History will be imported on its next load.'
+      })
+    },
+    async load(snapshot: Snapshot, rebuildCache = false) {
       const bookmarks = useBookmarkStore()
       if (bookmarks.isLoading || this.loadingId) return
-      const main = snapshot.files?.find(file => file.kind === 'main' && file.status === 'Available')
+      const main = snapshot.files?.find(file => file.kind === 'main' && (file.status === 'Available' || !rebuildCache && snapshot.cache?.state === 'Offline'))
       if (!main?.path) { this.error = 'Main XML unavailable. Restore the file and rescan.'; return }
       this.loadingId = snapshot.id ?? ''; this.message = ''; this.error = ''
       bookmarks.bookmarkError = ''
+      let pollingActive = true
+      const polling = setInterval(async () => {
+        try {
+          const { data } = await client.GET('/api/world-library')
+          if (data && pollingActive && this.loadingId === snapshot.id) this.library = data
+        } catch { /* the load response reports connection failures */ }
+      }, 900)
       try {
-        await bookmarks.loadByFullPath(main.path, '')
+        await bookmarks.loadByFullPath(main.path, '', rebuildCache)
+        pollingActive = false; clearInterval(polling)
         if (bookmarks.bookmarkError) throw new Error(bookmarks.bookmarkError)
         if (!this.isLoaded(snapshot)) throw new Error('The backend did not confirm that this snapshot loaded. Try again.')
         this.loadedId = snapshot.id ?? ''
         this.message = `Loaded ${snapshot.name || snapshot.prefix}.`
         await this.refresh()
       } catch (error) { this.loadedId = ''; this.error = error instanceof Error ? error.message : 'Load failed.' }
-      finally { this.loadingId = '' }
+      finally { pollingActive = false; clearInterval(polling); this.loadingId = '' }
     },
     isLoaded(snapshot: Snapshot): boolean {
       const current = useBookmarkStore().currentWorld

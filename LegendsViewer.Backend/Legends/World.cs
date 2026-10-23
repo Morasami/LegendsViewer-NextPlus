@@ -127,16 +127,16 @@ public class World : IDisposable, IWorld
         Stopwatch sw = new();
         sw.Start();
 
-        XmlParser xmlParser = new(this, xmlFile, xmlPlusFile);
+        using XmlParser xmlParser = new(this, xmlFile, xmlPlusFile);
         await xmlParser.ParseAsync();
         if (!string.IsNullOrWhiteSpace(historyFile))
         {
-            HistoryParser history = new(this, historyFile);
+            using HistoryParser history = new(this, historyFile);
             Log.Append(history.Parse());
         }
         if (!string.IsNullOrWhiteSpace(sitesAndPopulationsFile))
         {
-            SitesAndPopulationsParser sitesAndPopulations = new(this, sitesAndPopulationsFile);
+            using SitesAndPopulationsParser sitesAndPopulations = new(this, sitesAndPopulationsFile);
             sitesAndPopulations.Parse();
         }
 
@@ -1010,6 +1010,10 @@ public class World : IDisposable, IWorld
 
         Width = 0;
         Height = 0;
+        CurrentYear = 0;
+        CurrentMonth = 0;
+        CurrentDay = 0;
+        WorldGrid.Clear();
         PlayerRelatedObjects.Clear();
 
         SpecialEventsById.Clear();

@@ -1,5 +1,6 @@
 ﻿
 using LegendsViewer.Backend.Settings;
+using LegendsViewer.Backend.WorldCache;
 using LegendsViewer.Backend.Extensions;
 using LegendsViewer.Backend.Legends;
 using LegendsViewer.Backend.Legends.Bookmarks;
@@ -29,6 +30,7 @@ public class Program
         {
             builder.WithOrigins(LocalBrowserAccess.Origins)
                    .AllowAnyMethod()
+                   .WithExposedHeaders("X-NextPlus-Cache", "X-NextPlus-Load-Ms", "X-NextPlus-Warning")
                    .AllowAnyHeader();
         }));
 
@@ -39,13 +41,16 @@ public class Program
         })
         .UseUrls(BackendUrl);
 
-        builder.Services.AddSingleton<IWorld, World>();
+        builder.Services.AddSingleton<WorldCacheService>();
+        builder.Services.AddSingleton<WorldSessionStore>();
+        builder.Services.AddScoped<WorldSessionLease>(services => services.GetRequiredService<WorldSessionStore>().Lease());
+        builder.Services.AddScoped<IWorld>(services => new WorldView(services.GetRequiredService<WorldSessionLease>().World));
+        builder.Services.AddScoped<IWorldMapImageGenerator>(services => services.GetRequiredService<WorldSessionLease>().Map);
+        builder.Services.AddSingleton<WorldLoadService>();
         builder.Services.AddSingleton<ApplicationSettingsService>();
         builder.Services.AddSingleton<InstallationLocations>();
         builder.Services.AddSingleton<GameInstallationService>();
         builder.Services.AddSingleton<WorldLibrary.WorldLibraryService>();
-        builder.Services.AddSingleton<IWorldMapImageGenerator>(services => new WorldMapImageGenerator(
-            services.GetRequiredService<IWorld>(), services.GetRequiredService<GameInstallationService>().FindFile));
         builder.Services.AddSingleton<IBookmarkService, BookmarkService>();
         builder.Services.AddClassicRepositories();
 

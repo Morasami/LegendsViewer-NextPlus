@@ -1,4 +1,5 @@
 using System.Web;
+using LegendsViewer.Backend.WorldCache;
 using LegendsViewer.Backend.WorldLibrary;
 using LegendsViewer.Backend.Legends.Bookmarks;
 using LegendsViewer.Backend.Legends.Interfaces;
@@ -14,9 +15,10 @@ public class BookmarkController(
     IWorld worldDataService,
     IWorldMapImageGenerator worldMapImageGenerator,
     IBookmarkService bookmarkService,
-    WorldLibraryService? library = null) : ControllerBase
+    WorldLibraryService? library = null,
+    WorldLoadService? loader = null) : ControllerBase
 {
-    private static readonly SemaphoreSlim LoadGate = new(1, 1);
+    private static SemaphoreSlim LoadGate => WorldLoadService.LoadGate;
 
     public const string FileIdentifierLegendsXml = "-legends.xml";
 
@@ -81,9 +83,9 @@ public class BookmarkController(
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<Bookmark>> ParseWorldXml([FromBody] string filePath)
+    public async Task<ActionResult<Bookmark>> ParseWorldXml([FromBody] string filePath, [FromQuery] bool rebuildCache = false)
     {
-        if (string.IsNullOrWhiteSpace(filePath) || !System.IO.File.Exists(filePath))
+        if (string.IsNullOrWhiteSpace(filePath) || loader == null && !System.IO.File.Exists(filePath))
         {
             return BadRequest($"Invalid file path.\n{filePath}");
         }
@@ -105,16 +107,32 @@ public class BookmarkController(
             return System.IO.File.Exists(path) ? path : null;
         }
         var xmlFileName = Companion(FileIdentifierLegendsXml);
-        if (xmlFileName == null) return BadRequest("Main legends XML is missing.");
+        if (xmlFileName == null && loader == null) return BadRequest("Main legends XML is missing.");
+        xmlFileName ??= Path.Combine(directoryName, regionId + FileIdentifierLegendsXml);
         var xmlPlusFileName = Companion(FileIdentifierLegendsPlusXml);
         var historyFileName = Companion(FileIdentifierWorldHistoryTxt);
         var sitesAndPopsFileName = Companion(FileIdentifierWorldSitesAndPops);
         var mapFileName = Companion(FileIdentifierWorldMapBmp);
-        // The parser and map generator share singleton state. Reject overlapping manual/library loads.
+        // Serialize publication, bookmark updates and cache mutations across all loading APIs.
         if (!await LoadGate.WaitAsync(0)) return Conflict("Another world is loading. Wait for it to finish.");
 
+        PreparedWorld? prepared = null;
         try
         {
+            if (loader != null)
+            {
+                prepared = await Task.Run(() => loader.PrepareAsync(xmlFileName, rebuildCache));
+                var loaded = AddBookmark(xmlFileName, RegionName, Timestamp, prepared.World, prepared.Map);
+                try { library?.RecordLoad(xmlFileName, loaded); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                { logger.LogWarning(ex, "World loaded, but library metadata could not be saved"); }
+                loader.Publish(prepared);
+                Response.Headers["X-NextPlus-Cache"] = prepared.CacheHit ? "HIT" : "MISS";
+                Response.Headers["X-NextPlus-Load-Ms"] = prepared.Milliseconds.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+                if (prepared.Warning != null) Response.Headers["X-NextPlus-Warning"] = Uri.EscapeDataString(prepared.Warning);
+                prepared = null; // ownership transferred to the session store
+                return Ok(loaded);
+            }
             _worldDataService.Clear();
             _worldMapImageGenerator.Clear();
             _bookmarkService.MarkUnloaded();
@@ -138,8 +156,8 @@ public class BookmarkController(
         }
         catch (Exception ex)
         {
-            _worldDataService.Clear();
-            _worldMapImageGenerator.Clear();
+            if (loader == null) { _worldDataService.Clear(); _worldMapImageGenerator.Clear(); }
+            prepared?.Map.Clear();
             try { library?.RecordLoad(xmlFileName, null, ex.Message); }
             catch (Exception metadataError) when (metadataError is IOException or UnauthorizedAccessException)
             { logger.LogWarning(metadataError, "Could not save failed load metadata"); }
@@ -163,19 +181,21 @@ public class BookmarkController(
         return await ParseWorldXml(fullPath);
     }
 
-    private Bookmark AddBookmark(string filePath, string regionName, string timestamp)
+    private Bookmark AddBookmark(string filePath, string regionName, string timestamp, IWorld? world = null, IWorldMapImageGenerator? map = null)
     {
-        var imageData = _worldMapImageGenerator.GenerateMapByteArray(WorldMapImageGenerator.DefaultTileSizeMin);
+        world ??= _worldDataService;
+        map ??= _worldMapImageGenerator;
+        var imageData = map.GenerateMapByteArray(WorldMapImageGenerator.DefaultTileSizeMin);
         var bookmark = new Bookmark
         {
-            Id = $"{_worldDataService.Name}_{regionName}",
+            Id = $"{world.Name}_{regionName}",
             FilePath = string.IsNullOrEmpty(timestamp) ? filePath : BookmarkService.ReplaceLastOccurrence(filePath, timestamp, BookmarkService.TimestampPlaceholder),
-            WorldName = _worldDataService.Name,
-            WorldAlternativeName = _worldDataService.AlternativeName,
+            WorldName = world.Name,
+            WorldAlternativeName = world.AlternativeName,
             WorldRegionName = regionName,
             WorldTimestamps = [timestamp],
-            WorldWidth = _worldDataService.Width,
-            WorldHeight = _worldDataService.Height,
+            WorldWidth = world.Width,
+            WorldHeight = world.Height,
             WorldMapImage = imageData,
             State = BookmarkState.Loaded,
             LoadedTimestamp = timestamp,
