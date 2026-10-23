@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useWorldLibraryStore, type Snapshot } from '../stores/worldLibraryStore'
 import { useBookmarkStore } from '../stores/bookmarkStore'
 import client from '../apiClient'
-vi.mock('../apiClient', () => ({ default: { GET: vi.fn(), POST: vi.fn(), PUT: vi.fn() } }))
+vi.mock('../apiClient', () => ({ default: { GET: vi.fn(), POST: vi.fn(), PUT: vi.fn(), DELETE: vi.fn() } }))
 const snapshot = (id: string, worldId: string, date: string): Snapshot => ({ id, worldId, date, prefix: `region-${date}`,
   available: true, files: [{ kind: 'main', path: `/exports/region-${date}-legends.xml`, status: 'Available' }] })
 const first = snapshot('first', 'world', '00184-01-01')
@@ -11,6 +11,45 @@ const latest = snapshot('latest', 'world', '00185-01-01')
 const other = snapshot('other', 'different-directory', '00184-01-01')
 beforeEach(() => { setActivePinia(createPinia()); vi.clearAllMocks() })
 describe('World library', () => {
+  it('ignores an older progress response while the final refresh is pending', async () => {
+    vi.useFakeTimers()
+    try {
+      const store = useWorldLibraryStore(); store.library = { snapshots: [{ ...first, cache: { state: 'Ready' } }] }
+      let finishLoad!: (v: unknown) => void, finishPoll!: (v: unknown) => void, finishRefresh!: (v: unknown) => void
+      vi.mocked(client.POST).mockImplementationOnce(() => new Promise(r => { finishLoad = r }) as never)
+        .mockImplementationOnce(() => new Promise(r => { finishRefresh = r }) as never)
+      vi.mocked(client.GET).mockImplementationOnce(() => new Promise(r => { finishPoll = r }) as never)
+      const pending = store.load(first); await vi.advanceTimersByTimeAsync(900)
+      finishLoad({ data: { filePath: first.files![0]!.path, loadedTimestamp: first.date, state: 'Loaded', worldName: 'World' } })
+      await vi.waitFor(() => expect(client.POST).toHaveBeenCalledTimes(2))
+      finishPoll({ data: { snapshots: [{ ...first, cache: { state: 'Writing' } }] } })
+      await Promise.resolve(); await Promise.resolve()
+      expect(store.loadingId).toBe(first.id); expect(store.library?.snapshots?.[0]?.cache?.state).toBe('Ready')
+      finishRefresh({ data: { snapshots: [{ ...first, cache: { state: 'Ready' } }] } }); await pending
+    } finally { vi.useRealTimers() }
+  })
+  it('rebuilds only the selected snapshot through the existing loading API', async () => {
+    vi.mocked(client.POST).mockResolvedValueOnce({ data: { filePath: first.files![0]!.path, loadedTimestamp: first.date, state: 'Loaded', worldName: 'World' } } as never)
+      .mockResolvedValueOnce({ data: { snapshots: [first] } } as never)
+    const store = useWorldLibraryStore(); await store.load(first, true)
+    expect(client.POST).toHaveBeenCalledWith('/api/Bookmark/loadByFullPath', { body: first.files![0]!.path, params: { query: { rebuildCache: true } } })
+    expect(store.isLoaded(first)).toBe(true)
+  })
+  it('removes only cache data and preserves bookmark state', async () => {
+    const store = useWorldLibraryStore(), bookmarks = useBookmarkStore()
+    bookmarks.bookmarks = [{ filePath: '/saved', worldName: 'Favorite', state: 'Loaded' }]
+    vi.mocked(client.DELETE).mockResolvedValue({ data: { snapshots: [first] } } as never)
+    await store.removeCache(first)
+    expect(client.DELETE).toHaveBeenCalledWith('/api/world-library/{snapshotId}/cache', { headers: { 'X-NextPlus-Settings': '1' }, params: { path: { snapshotId: first.id } } })
+    expect(bookmarks.bookmarks[0]?.worldName).toBe('Favorite'); expect(store.message).toContain('cache removed')
+  })
+  it('allows an explicitly offline cache while continuing to reject missing uncached exports', async () => {
+    const offline = { ...first, available: false, cache: { state: 'Offline' }, files: [{ ...first.files![0], status: 'Missing' }] }
+    vi.mocked(client.POST).mockResolvedValueOnce({ data: { filePath: first.files![0]!.path, loadedTimestamp: first.date, state: 'Loaded', worldName: 'World' } } as never)
+      .mockResolvedValueOnce({ data: { snapshots: [offline] } } as never)
+    const store = useWorldLibraryStore(); await store.load(offline)
+    expect(store.isLoaded(offline)).toBe(true)
+  })
   it('groups by stable world identity and sorts snapshots by reliable export date', async () => {
     vi.mocked(client.POST).mockResolvedValue({ data: { snapshots: [first, other, latest] } } as never)
     const store = useWorldLibraryStore(); await store.refresh()

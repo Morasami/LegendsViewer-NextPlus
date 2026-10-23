@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Xml;
+using System.Text.Json.Serialization;
+using LegendsViewer.Backend.WorldCache;
 using LegendsViewer.Backend.Legends.Bookmarks;
 using LegendsViewer.Backend.Settings;
 
@@ -9,6 +11,8 @@ public record ExportFile(string Kind, string Path, string Status, long? Size, Da
 public record ExportRoot(string Path, string Source, string? Warning);
 public record LibrarySnapshot
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CacheInfo? Cache { get; set; }
     public string Id { get; init; } = "";
     public string WorldId { get; set; } = "";
     public string Directory { get; init; } = "";
@@ -35,7 +39,7 @@ public record LibraryIndex
 public record LibraryState(IReadOnlyList<LibrarySnapshot> Snapshots, IReadOnlyList<ExportRoot> Roots,
     string[] ExportDirectories, bool PremiumGraphicsAvailable, string? Warning);
 
-// Only discovery metadata is persisted. No historical model or parsed-world cache.
+// Only discovery metadata is persisted here; cache state is enriched on detached API snapshots.
 public sealed class WorldLibraryService
 {
     public const int MaxEntriesPerRoot = 10000;
@@ -49,6 +53,9 @@ public sealed class WorldLibraryService
     private string? warning;
     private string? scanWarning;
     private List<ExportRoot> roots = [];
+    private readonly WorldCacheService? cache;
+    public WorldLibraryService(ApplicationSettingsService settings, GameInstallationService installations, IBookmarkService bookmarks, WorldCacheService cache)
+        : this(settings, installations, bookmarks) => this.cache = cache;
     public WorldLibraryService(ApplicationSettingsService settings, GameInstallationService installations, IBookmarkService bookmarks)
         : this(settings, installations, bookmarks, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "LegendsViewer-NextPlus", "world-library.json")) { }
@@ -93,7 +100,13 @@ public sealed class WorldLibraryService
 
     public LibraryState Get()
     {
-        lock (gate) return new(index.Snapshots.Select(Clone).ToArray(), roots.ToArray(), settings.Read().ExportDirectories,
+        CacheInfo? CacheState(LibrarySnapshot snapshot)
+        {
+            var info = cache?.Info(Path.Combine(snapshot.Directory, snapshot.Prefix + "-legends.xml"));
+            return info?.State == "NeverImported" && snapshot.Width.HasValue
+                ? new("Unavailable", "No parsed-world cache. Rebuild on next load.") : info;
+        }
+        lock (gate) return new(index.Snapshots.Select(s => Clone(s) with { Cache = CacheState(s) }).ToArray(), roots.ToArray(), settings.Read().ExportDirectories,
             installations.Discover().Selected?.PremiumGraphicsAvailable == true, warning ?? scanWarning);
     }
     private static LibrarySnapshot Clone(LibrarySnapshot s) => s with { Files = [.. s.Files], Thumbnail = s.Thumbnail?.ToArray() };

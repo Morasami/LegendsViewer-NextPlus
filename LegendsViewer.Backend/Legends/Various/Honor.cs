@@ -132,6 +132,8 @@ public class Honor
         return _requirementsStringCache?.Value ?? string.Empty;
     }
 
+    internal void RestoreCacheHelpers() => _requirementsStringCache = new Lazy<string>(ComputeRequirementsString);
+
     public string Print(bool withHonoredHfs = false)
     {
         string html = "";

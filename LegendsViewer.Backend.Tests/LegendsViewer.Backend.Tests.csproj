@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
+    <Compile Include="../scripts/WorldCacheProbe/WorldEvidence.cs" Link="WorldEvidence.cs" />
   </ItemGroup>
 
   <ItemGroup>
